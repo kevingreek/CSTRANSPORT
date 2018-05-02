@@ -1,2 +1,2 @@
 # CSTRANSPORT
-Transport module for network sync
+Transport module for database synchronization and messaging
