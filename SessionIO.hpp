@@ -6,10 +6,12 @@
 
 #pragma once
 
-#include <cstdlib>
+
 #include <iostream>
 #include <vector>
 #include <functional>
+#include <map>
+
 
 #include <boost/asio.hpp>
 #include <boost/bind.hpp>
@@ -19,238 +21,285 @@
 #include <boost/property_tree/info_parser.hpp>
 #include <boost/chrono.hpp>
 #include <boost/thread/thread.hpp>
+#include <boost/shared_ptr.hpp>
+
+#include "sha1.hpp"
+
+
 
 using boost::asio::ip::udp;
 
 
-
 /**
 @class SessionIO
-РљР»Р°СЃСЃ С‚СЂР°СЃРїРѕСЂС‚РЅРѕРіРѕ СѓСЂРѕРІРЅСЏ Р°СЃРёРЅС…СЂРѕРЅРЅРѕРіРѕ РїСЂРёРµРјР°/РїРµСЂРµРґР°С‡Рё РёРЅС„РѕСЂРјР°С†РёРё РїРѕ РїСЂРѕС‚РѕРєРѕР»Сѓ UDP.
+Класс траспортного уровня асинхронного приема/передачи информации по протоколу UDP.
 */
 class SessionIO
 {
 public:
 	/*!
-	* \brief РљРѕРЅСЃС‚СЂСѓРєС‚РѕСЂ РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ.
+	* \brief Конструктор по умолчанию.
 	*/
 	SessionIO();
 
 	/*!
-	* \brief Р’РёСЂС‚СѓР°Р»СЊРЅС‹Р№ РґРµСЃС‚СЂСѓРєС‚РѕСЂ РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ.
+	* \brief Виртуальный деструктор по умолчанию.
 	*/
 	virtual ~SessionIO();
 
 	/*!
-	* \brief Р¤СѓРЅРєС†РёСЏ Р·Р°РїСѓСЃРєР° РєР»РёРµРЅС‚Р°.
+	* \brief Функция запуска клиента.
 	*/
 	void Run();
 
 private:
 
-	unsigned int DefiningNode_;		/// РћРїСЂРµРґРµР»РµРЅРёРµ СѓСЂРѕРІРЅСЏ СѓР·Р»Р° ( РєР»РёРµРЅС‚Р° )
-	const uint16_t version_ = 1;		/// Р’РµСЂСЃРёСЏ СѓР·Р»Р°
-	const char * host_port_ = { "9001" };	/// РџРѕСЂС‚ С…РѕСЃС‚Р° РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ
-	const char * server_port_ = { "6000" }; /// РџРѕСЂС‚ СЃРёРіРЅР°Р»СЊРЅРѕРіРѕ СЃРµСЂРІРµСЂР° РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ
-	static bool OneReg;			/// Р¤Р»Р°Рі СЂРµРіРёСЃС‚СЂР°С†РёРё 
+	unsigned int DefiningNode_;				/// Определение уровня узла ( клиента )
+	const uint16_t version_ = 1;			/// Версия узла
+	const char * host_port_ = { "9001" };	/// Порт хоста по умолчанию
+	const char * server_port_ = { "6000" }; /// Порт сигнального сервера по умолчанию
+	static bool OneReg;						/// Флаг регистрации 
+
+	SHA1 HashBlock_;
 	
-	/// РЎС‚СЂСѓРєС‚СѓСЂР° СѓР·Р»Р°
+	/// Структура узла
 	struct PacketNode
 	{
-		std::string hash; /// РҐСЌС€
-		std::string key;  /// РљР»СЋС‡
-		std::string ip;	  /// IP Р°РґСЂРµСЃ
-		std::string port; /// РџРѕСЂС‚ 
+		std::string hash; /// Хэш
+		std::string key;  /// Ключ
+		std::string ip;	  /// IP адрес
+		std::string port; /// Порт 
 	};
 
-	std::string ServerHash_; /// РҐСЌС€ СЃРµСЂРІРµСЂР°
-	std::string ServerKey_;  /// РљР»СЋС‡ СЃРµСЂРІРµСЂР°
-	std::string MyHash_;     /// РҐСЌС€ РґР°РЅРЅРѕРіРѕ СѓР·Р»Р°
-	std::string MyPublicKey_;/// РџСѓР±Р»РёС‡РЅС‹Р№ РєР»СЋС‡ РґР°РЅРЅРѕРіРѕ СѓР·Р»Р°
+	std::string ServerHash_; /// Хэш сервера
+	std::string ServerKey_;  /// Ключ сервера
+	std::string MyHash_;     /// Хэш данного узла
+	std::string MyPublicKey_;/// Публичный ключ данного узла
 
-	std::vector<std::string> РЎonfidantNodes_; /// РЎРїРёСЃРѕРє РґРѕРІРµСЂРµРЅРЅС‹С… СѓР·Р»РѕРІ
-	std::string GeneralNode_;                 /// Р“Р»Р°РІРЅС‹Р№ СѓР·РµР»
+	std::vector<std::string> СonfidantNodes_; /// Список доверенных узлов
+	std::string GeneralNode_;                 /// Главный узел
 
-	/// РџРµСЂРµС‡РёСЃР»РµРЅРёРµ СѓСЂРѕРІРЅРµР№ СѓР·Р»Р°
+
+
+
+	/// Перечисление уровней узла
 	enum LevelNodes {
-		Normal = 0x00,    /// РћР±С‹С‡РЅС‹Р№ СѓР·РµР»
-		РЎonfidant = 0x01, /// Р”РѕРІРµСЂРµРЅРЅС‹Р№ СѓР·РµР»
-		Main = 0x02,      /// Р“Р»Р°РІРЅС‹Р№ СѓР·РµР»
-		Write = 0x03      /// РџРёС€СѓС‰РёР№ СѓР·РµР»
+		Normal = 0,    /// Обычный узел
+		Сonfidant , /// Доверенный узел
+		Main ,      /// Главный узел
+		Write       /// Пишущий узел
 	};
 
-	/// РџРµСЂРµС‡РёСЃР»РµРЅРёРµ РєРѕРјР°РЅРґ
+	/// Перечисление команд
 	enum CommandList {
-		Registration = 0x01,         /// Р РµРіРёСЃС‚СЂР°С†РёСЏ
-		UnRegistration = 0x02,	     /// Р Р°Р·СЂРµРіРёСЃС‚СЂР°С†РёСЏ 
-		Redirect = 0x03,	     /// РџРµСЂРµСЃСЃС‹Р»РєР°
-		GetHash = 0x04,              /// РџСЂРёРЅСЏС‚СЊ С…СЌС€
-		SendHash = 0x05,             /// РћС‚РїСЂР°РІРёС‚СЊ С…СЌС€
-		SendTransaction = 0x06,      /// РћС‚РїСЂР°РІРёС‚СЊ С‚СЂР°РЅР·Р°РєС†РёСЋ
-		GetTransaction = 0x07,       /// РџСЂРёРЅСЏС‚СЊ С‚СЂР°РЅР·Р°РєС†РёСЋ
-		SendTransactionList = 0x08,  /// РћС‚РїСЂР°РІРёС‚СЊ С‚СЂР°РЅР·Р°РєС†РёРѕРЅРЅС‹Р№ Р»РёСЃС‚
-		GetTransactionList = 0x09,   /// РџСЂРёРЅСЏС‚СЊ С‚СЂР°РЅР·Р°РєС†РёРѕРЅРЅС‹Р№ Р»РёСЃС‚
-		SendVector = 0x10,           /// РћС‚РїСЂР°РІРёС‚СЊ РІРµРєС‚РѕСЂ
-		GetVector = 0x11,	     /// РџСЂРёРЅСЏС‚СЊ РІРµРєС‚РѕСЂ
-		SendMatrix = 0x12,           /// РћС‚РїСЂР°РІРёС‚СЊ РјР°С‚СЂРёС†Сѓ
-		GetMatrix = 0x13,            /// РџСЂРёРЅСЏС‚СЊ РјР°С‚СЂРёС†Сѓ
-		SendBlock = 0x14,            /// РћС‚РїСЂР°РІРёС‚СЊ Р±Р»РѕРє РґР°РЅРЅС‹С…
-		GetHashAll = 0x015,          /// Р—Р°РїСЂРѕСЃ С…СЌС€(Р°) СЃРѕ РІСЃРµС… СѓР·Р»РѕРІ
-		SendIpTable = 0x016          /// Р Р°Р·РѕСЃР»Р°С‚СЊ СЃРїРёСЃРѕРє РґРѕРІРµСЂРµРЅРЅС‹С… СѓР·Р»РѕРІ Рё РіР»Р°РІРЅРѕРіРѕ РІСЃРµРј СѓР·Р»Р°Рј
+		Registration = 1,         /// Регистрация
+		UnRegistration ,		 /// Разрегистрация 
+		Redirect ,			 /// Перессылка
+		GetHash ,              /// Принять хэш
+		SendHash ,		     /// Отправить хэш
+		SendTransaction ,      /// Отправить транзакцию
+		GetTransaction ,       /// Принять транзакцию
+		SendTransactionList ,  /// Отправить транзакционный лист
+		GetTransactionList ,   /// Принять транзакционный лист
+		SendVector ,           /// Отправить вектор
+		GetVector ,			 /// Принять вектор
+		SendMatrix ,           /// Отправить матрицу
+		GetMatrix ,            /// Принять матрицу
+		SendBlock ,            /// Отправить блок данных
+		GetHashAll ,          /// Запрос хэш(а) со всех узлов
+		SendIpTable ,         /// Разослать список доверенных узлов и главного всем узлам
+		SinhroPacket ,
+		GiveHash2
 	};
 
-	/// РџРµСЂРµС‡РёСЃР»РµРЅРёРµ РїРѕРґРєРѕРјР°РЅРґ
+	/// Перечисление подкоманд
 	enum SubCommandList {
-		RegistrationLevelNode = 0x01, /// РџСЂРёРЅСЏС‚СЊ СЃРїРёСЃРѕРє РґРѕРІРµСЂРµРЅРЅС‹С… Рё РіР»Р°РІРЅРѕРіРѕ СѓР·Р»Р°
-		GiveHash = 0x02,              /// Р—Р°РїСЂРѕСЃ РЅР° С…СЌС€
-		GetBlock = 0x03,	      /// Р—Р°РїСЂРѕСЃ РЅР° Р±Р»РѕРє РґР°РЅРЅС‹С…
+		RegistrationLevelNode = 1, /// Принять список доверенных и главного узла
+		GiveHash ,              /// Запрос на хэш
+		GetBlock ,			  /// Запрос на блок данных
+		GetBlocks
 	};
 
-	enum { max_length = 65447, hash_length = 40, publicKey_length = 40 };
+	enum { max_length = 64312, hash_length = 40, publicKey_length = 256 };
 
-	/// РЎС‚СЂСѓРєС‚СѓСЂР° Р±СѓС„РµСЂР° РїСЂРёРµРјР°/РїРµСЂРµРґР°С‡Рё РёРЅС„РѕСЂРјР°С†РёРё
+	/// Структура буфера приема/передачи информации
 	struct Packet
 	{
-		uint8_t command;                        /// РљРѕРјР°РЅРґР°
-		uint8_t subcommand;			/// РџРѕРґРєРѕРјР°РЅРґР°
-		uint8_t version;			/// Р’РµСЂСЃРёСЏ
-		uint16_t header;			/// РќРѕРјРµСЂ Р·Р°РіРѕР»РѕРІРєР°
-		uint16_t countHeader;			/// РљРѕР»РёС‡РµСЃС‚РІРѕ Р·Р°РіРѕР»РѕРІРєРѕРІ
-		uint8_t hash[hash_length];              /// РҐСЌС€ РїРµСЂРµРґР°СЋС‰РµРіРѕ/РїСЂРёРЅРёРјР°СЋС‰РµРіРѕ СѓР·Р»Р°
-		uint8_t publickKey[publicKey_length];   /// РџСѓР±Р»РёС‡РЅС‹Р№ РєР»СЋС‡ РїРµСЂРµРґР°СЋС‰РµРіРѕ/РїСЂРёРЅРёРјР°СЋС‰РµРіРѕ СѓР·Р»Р°
-		uint8_t data[max_length];               /// Р”Р°РЅРЅС‹Рµ
+		uint8_t command;                        /// Команда
+		uint8_t subcommand;						/// Подкоманда
+		uint8_t version;						/// Версия
+		uint8_t hash[hash_length];              /// Хэш передающего/принимающего узла
+		uint8_t publickKey[publicKey_length];   /// Публичный ключ передающего/принимающего узла
+		uint8_t HashBlock[hash_length];			/// Хэш блока
+		uint16_t header;						/// Номер заголовка
+		uint16_t countHeader;					/// Количество заголовков
+		uint8_t data[max_length];               /// Данные
 	}RecvBuffer, SendBuffer;
 
+	struct Storage
+	{
+		uint8_t HashBlock[hash_length];			 /// Хэш блока
+		uint16_t header;						 /// Номер заголовка
+		bool operator==(const Storage & param)
+		{
+			return !strncmp((const char*)this->HashBlock, (const char*)param.HashBlock, sizeof(HashBlock)) && 
+				this->header == param.header;
+		}
+	};
+
 	/*!
-	* \brief РњРµС‚РѕРґ РёРЅРёС†РёР»РёР·Р°С†РёРё РІРЅСѓС‚СЂРµРЅРЅРёС… РїРµСЂРµРјРµРЅРЅС‹С….
-	* \return Р Р°Р·РјРµСЂ СЃР»СѓР¶РµР±РЅРѕР№ РёРЅС„РѕСЂРјР°С†РёРё Р±СѓС„РµСЂР° РїСЂРёРµРјР°/РїРµСЂРµРґР°С‡Рё РёРЅС„РѕСЂРјР°С†РёРё
+	* \brief Метод иницилизации внутренних переменных.
+	* \return Размер служебной информации буфера приема/передачи информации
 	*/
 	constexpr std::size_t CalcSum() const;
-	unsigned int SizePacketHeader;               /// Р Р°Р·РјРµСЂ СЃР»СѓР¶РµР±РЅРѕР№ РёРЅС„РѕСЂРјР°С†РёРё Р±СѓС„РµСЂР° РїСЂРёРµРјР°/РїРµСЂРµРґР°С‡Рё РёРЅС„РѕСЂРјР°С†РёРё
+	unsigned int SizePacketHeader;               /// Размер служебной информации буфера приема/передачи информации
 
-	boost::asio::io_service io_service_client_;  /// РЎРµСЂРІРёСЃ РєР»РёРµРЅС‚Р°
-	boost::asio::io_service io_service_server_;  /// РЎРµСЂРІРёСЃ СЃРµСЂРІРµСЂР°
+	boost::asio::io_service io_service_client_;  /// Сервис клиента
+	boost::asio::io_service io_service_server_;  /// Сервис сервера
 	
-	udp::socket * InputServiceSocket_;           /// РЎРѕРєРµС‚ РІС…РѕРґРЅРѕР№ РёРЅС„РѕСЂРјР°С†РёРё 
-	udp::endpoint InputServiceRecvEndpoint_;     /// РЎРµС‚РµРІРѕР№ Р°РґСЂРµСЃ РїСЂРёРµРјР° РёРЅС„РѕСЂРјР°С†РёРё
-	udp::endpoint InputServiceSendEndpoint_;     /// РЎРµС‚РµРІРѕР№ Р°РґСЂРµСЃ РїСЂРёРЅСЏС‚РѕР№ РёРЅС„РѕСЂРјР°С†РёРё 
-	udp::resolver InputServiceResolver_;         /// Р РµС€Р°С‚РµР»СЊ РєР»РёРµРЅС‚Р°
+	udp::socket * InputServiceSocket_;           /// Сокет входной информации 
+	udp::endpoint InputServiceRecvEndpoint_;	 /// Сетевой адрес приема информации
+	udp::endpoint InputServiceSendEndpoint_;     /// Сетевой адрес принятой информации 
+	udp::resolver InputServiceResolver_;         /// Решатель клиента
 
-	udp::socket * OutputServiceSocket_;          /// РЎРѕРєРµС‚ РІС‹С…РѕРґРЅРѕР№ РёРЅС„РѕСЂРјР°С†РёРё 
-	udp::endpoint OutputServiceRecvEndpoint_;    /// РЎРµС‚РµРІРѕР№ Р°РґСЂРµСЃ РїСЂРёРµРјР° РёРЅС„РѕСЂРјР°С†РёРё
-	udp::endpoint OutputServiceSendEndpoint_;    /// РЎРµС‚РµРІРѕР№ Р°РґСЂРµСЃ РІС‹РґР°С‡Рё РёРЅС„РѕСЂРјР°С†РёРё
-	udp::endpoint OutputServiceServerEndpoint_;  /// РЎРµС‚РµРІРѕР№ Р°РґСЂРµСЃ СЃРёРіРЅР°Р»СЊРЅРѕРіРѕ СЃРµСЂРІРµСЂР°
-	udp::resolver OutputServiceResolver_;		 /// Р РµС€Р°С‚РµР»СЊ СЃРµСЂРІРµСЂР°
+	udp::socket * OutputServiceSocket_;          /// Сокет выходной информации 
+	udp::endpoint OutputServiceRecvEndpoint_;    /// Сетевой адрес приема информации
+	udp::endpoint OutputServiceSendEndpoint_;    /// Сетевой адрес выдачи информации
+	udp::endpoint OutputServiceServerEndpoint_;  /// Сетевой адрес сигнального сервера
+	udp::resolver OutputServiceResolver_;		 /// Решатель сервера
 
-	boost::circular_buffer<PacketNode> NodesRing_;   /// РљРѕР»СЊС†РµРІРѕР№ Р±СѓС„РµСЂ С…СЂР°РЅРµРЅРёСЏ СѓР·Р»РѕРІ
-	boost::circular_buffer<std::string> BackData_;	 /// РљРѕР»СЊС†РµРІРѕР№ Р±СѓС„РµСЂ С…СЂР°РЅРµРЅРёСЏ РїСЂРµРґС‹РґСѓС‰РµР№ РёРЅС„РѕСЂРјР°С†РёРё
+	boost::circular_buffer<PacketNode> NodesRing_;   /// Кольцевой буфер хранения узлов
+	boost::circular_buffer<Storage> BackData_;	     /// Кольцевой буфер хранения предыдущей информации
 
-	boost::detail::spinlock SpinLock_;               /// CРїРёРЅ-Р±Р»РѕРєРёСЂРѕРІРєР°
-	boost::property_tree::ptree config;              /// РљР»Р°СЃСЃ РёРЅРёС†РёР°Р»РёР·Р°С†РёРё
-	boost::asio::deadline_timer timer;				 /// РўР°Р№РјРµСЂ
+	//boost::detail::spinlock SpinLock_;               /// Cпин-блокировка
+	boost::property_tree::ptree config;              /// Класс инициализации
+	//boost::asio::deadline_timer timer;				 /// Таймер
 
 
-	
+	std::string tmp_hash1;
+	std::string tmp_hash2;
+	std::map<unsigned int, std::string> blocks;
+
 	/*!
-	* \brief РњРµС‚РѕРґ РёРЅРёС†РёР»РёР·Р°С†РёРё РІРЅСѓС‚СЂРµРЅРЅРёС… РїРµСЂРµРјРµРЅРЅС‹С….
+	* \brief Метод иницилизации внутренних переменных.
 	*/
 	void Initialization();
 
-	/*!
-	* \brief РњРµС‚РѕРґ РїСЂРёРµРјР° РёРЅС„РѕСЂРјР°С†РёРё.
-	*/
-	void InputServiceHandleReceive(const boost::system::error_code& error, std::size_t bytes_transferred);
+	void InitMap();
 
 	/*!
-	* \brief РњРµС‚РѕРґ РІС‹РґР°С‡Рё РёРЅС„РѕСЂРјР°С†РёРё.
+	* \brief Метод приема информации.
+	*/
+	void InputServiceHandleReceive(const boost::system::error_code & error, std::size_t bytes_transferred);
+
+	void InputServiceHandleSend(const boost::system::error_code & error, std::size_t bytes_transferred);
+
+
+
+	void handle_send(boost::shared_ptr<std::string> /*message*/,
+		const boost::system::error_code& /*error*/,
+		std::size_t /*bytes_transferred*/);
+
+	void SendBlocks(const char * buff, unsigned int size);
+
+	void GetBlocks2(std::size_t bytes_transferred);
+
+	/*!
+	* \brief Метод выдачи информации.
 	*/
 	void OutputServiceHandleSend(const boost::system::error_code& error, std::size_t bytes_transferred);
 
 	/*!
-	* \brief РњРµС‚РѕРґ РІС‹РґР°С‡Рё РёРЅС„РѕСЂРјР°С†РёРё.
+	* \brief Метод выдачи информации.
 	*/
 	void OutputServiceSendCommand(const Packet & pack, unsigned int lenData);
 
 	/*!
-	* \brief РњРµС‚РѕРґ РІС‹РґР°С‡Рё РёРЅС„РѕСЂРјР°С†РёРё.
+	* \brief Метод выдачи информации.
 	*/
 	void SolverSendData(char * buffer, unsigned int buf_size, char * ip_buffer, unsigned int ip_size, unsigned int cmd);
 
 	/*!
-	* \brief РњРµС‚РѕРґ РІС‹РґР°С‡Рё С…СЌС€.
+	* \brief Метод выдачи хэш.
 	*/
 	void SolverSendHash(char * buffer, unsigned int buf_size, char * ip_buffer, unsigned int ip_size);
 
 	/*!
-	* \brief РњРµС‚РѕРґ Р·Р°РїСЂРѕСЃР° С…СЌС€ РІСЃРµС… СѓР·Р»РѕРІ.
+	* \brief Метод запроса хэш всех узлов.
 	*/
 	void SolverGetHashAll();
 
 	/*!
-	* \brief РњРµС‚РѕРґ Р·Р°РїСЂРѕСЃР° С…СЌС€ РґР°РЅРЅРѕРіРѕ СѓР·Р»Р°.
+	* \brief Метод запроса хэш данного узла.
 	*/
 	void SolverGiveHash(std::size_t bytes_transferred);
 
 	/*!
-	* \brief РњРµС‚РѕРґ РѕС‚РїСЂР°РІРєРё С‚СЂР°РЅР·Р°РєС†РёРё.
+	* \brief Метод отправки транзакции.
 	*/
 	void SolverSendTransaction(const char * data, unsigned size);
 
 	/*!
-	* \brief РњРµС‚РѕРґ РѕС‚РїСЂР°РІРєРё С‚СЂР°РЅР·Р°РєС†РёРё.
+	* \brief Метод отправки транзакции.
 	*/
 	void SolverSendTransactionList(const char * data, unsigned size);
 
 	/*!
-	* \brief РњРµС‚РѕРґ РѕС‚РїСЂР°РІРєРё РІРµРєС‚РѕСЂР°.
+	* \brief Метод отправки вектора.
 	*/
 	void SolverSendVector(const char * data, unsigned size);
 
 	/*!
-	* \brief РњРµС‚РѕРґ РѕС‚РїСЂР°РІРєРё РјР°С‚СЂРёС†С‹.
+	* \brief Метод отправки матрицы.
 	*/
 	void SolverSendMatrix(const char * data, unsigned size);
 
 	/*!
-	* \brief РњРµС‚РѕРґ РѕС‚РїСЂР°РІРєРё Р±Р»РѕРєР° РґР°РЅРЅС‹С….
+	* \brief Метод отправки блока данных.
 	*/
 	void SolverSendBlock(const char * data, unsigned size);
 
 	/*!
-	* \brief РњРµС‚РѕРґ РіРµРЅРµСЂР°С†РёРё РґРѕРІРµСЂРµРЅРЅС‹С… Рё РіР»Р°РІРЅРѕРіРѕ СѓР·Р»Р°.
+	* \brief Метод генерации доверенных и главного узла.
 	*/
-	void GenTableRegistrationLevelNode(const char * data, unsigned size);
+	void GenTableRegistrationLevelNode( char * data, unsigned size);
 
 	/*!
-	* \brief РњРµС‚РѕРґ РіРµРЅРµСЂР°С†РёРё СЃР»СѓС‡Р°Р№РЅРѕРіРѕ С…СЌС€.
+	* \brief Метод генерации случайного хэш.
 	*/
 	void GenerationHash();
 
 	/*!
-	* \brief РњРµС‚РѕРґ Р·Р°РїСѓСЃРєР° РІСЃРµС… РїСЂРѕС†РµСЃСЃРѕРІ.
+	* \brief Метод запуска всех процессов.
 	*/
-	void Begin();
+	void StartReceive();
 
 	/*!
-	* \brief РњРµС‚РѕРґ РїРµСЂРµСЃС‹Р»РєРё РёРЅС„РѕСЂРјР°С†РёРё СѓР·Р»Р°Рј.
+	* \brief Метод пересылки информации узлам.
 	*/
 	bool RunRedirect(std::size_t bytes_transferred);
 	
 	/*!
-	* \brief РњРµС‚РѕРґ СЂР°Р·СЂРµРіРёСЃС‚СЂР°С†РёСЏ РЅР° СЃРёРіРЅР°Р»СЊРЅРѕРј СЃРµСЂРІРµСЂРµ.
+	* \brief Метод разрегистрация на сигнальном сервере.
 	*/
 	void InRegistrationNode();
 
 	/*!
-	* \brief РњРµС‚РѕРґ СЂРµРіРёСЃС‚СЂР°С†РёРё РґРѕРІРµСЂРµРЅРЅС‹С… Рё РіР»Р°РІРЅРѕРіРѕ СѓР·Р»Р°.
+	* \brief Метод регистрации доверенных и главного узла.
 	*/
 	void InRegistrationLevelNode(std::size_t bytes_transferred);
 
 	/*!
-	* \brief РњРµС‚РѕРґ СЂРµРіРёСЃС‚СЂР°С†РёРё РЅР° СЃРёРіРЅР°Р»СЊРЅРѕРј СЃРµСЂРІРµСЂРµ.
+	* \brief Метод регистрации на сигнальном сервере.
 	*/
 	void RegistrationToServer();
 
+	void GenHashBlock(const char * buff, unsigned int size);
+
+	void SendSinhroPacket();
+
 	void DefiningNode(unsigned int init);
 	
+	std::function<void(char * buffer, unsigned int buf_size, char * ip_buffer, unsigned int ip_size, unsigned int cmd)> SolverSendData_;
 };
+

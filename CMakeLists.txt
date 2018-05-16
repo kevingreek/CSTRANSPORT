@@ -1,4 +1,7 @@
 cmake_minimum_required(VERSION 3.3)
+
+set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/Modules;${CMAKE_SOURCE_DIR}")
+
 set(TARGET client)
 SET (CMAKE_BUILD_TYPE "Debug")
 # Either specify BOOST_ROOT or BOOST_INCLUDEDIR and BOOST_LIBRARYDIR.
@@ -10,7 +13,8 @@ set (Boost_USE_MULTITHREADED ON)
 set (Boost_USE_STATIC_LIBS ON)
 set (Boost_USE_STATIC_RUNTIME OFF)
 set (BOOST_ALL_DYN_LINK OFF)
-
+set(CMAKE_CXX14_EXTENSION_COMPILE_OPTION -std=c++14)
+set(CMAKE_CXX_STANDARD 14)
 #message (STATUS "MSVC: " ${BOOST_ROOT} )
 
 # Load settings for the external project "Boost".
@@ -53,6 +57,7 @@ add_executable(${TARGET} 	main.cpp
 							SessionIO.hpp
 							sha1.hpp
 							TextHelp.hpp
+							Export_Config.h
 							)
 target_compile_features(${TARGET} PUBLIC cxx_std_11)
 
