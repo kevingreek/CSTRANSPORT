@@ -6,7 +6,7 @@
 
 #pragma once
 
-
+#include <cstdlib>
 #include <iostream>
 #include <vector>
 #include <functional>
@@ -26,9 +26,14 @@
 #include "sha1.hpp"
 
 
+//#include <Solver\SolverFactory.hpp>
 
 using boost::asio::ip::udp;
 
+
+//namespace Credits {
+//	class ISolver;
+//}
 
 /**
 @class SessionIO
@@ -79,7 +84,9 @@ private:
 	std::vector<std::string> СonfidantNodes_; /// Список доверенных узлов
 	std::string GeneralNode_;                 /// Главный узел
 
-
+	std::string calc_hash;
+	//Credits::SolverFactory factory;
+	//std::unique_ptr<Credits::ISolver> solver;
 
 
 	/// Перечисление уровней узла
@@ -117,24 +124,34 @@ private:
 		RegistrationLevelNode = 1, /// Принять список доверенных и главного узла
 		GiveHash ,              /// Запрос на хэш
 		GetBlock ,			  /// Запрос на блок данных
-		GetBlocks
+		GetBlocks,
+		Empty
 	};
 
-	enum { max_length = 64312, hash_length = 40, publicKey_length = 256 };
+	enum Version
+	{
+		version_1 = 1
+	};
+
+	enum { max_length = 62440, hash_length = 40, publicKey_length = 256 };
 
 	/// Структура буфера приема/передачи информации
+#pragma pack (push, 1)
 	struct Packet
 	{
-		uint8_t command;                        /// Команда
-		uint8_t subcommand;						/// Подкоманда
-		uint8_t version;						/// Версия
-		uint8_t hash[hash_length];              /// Хэш передающего/принимающего узла
-		uint8_t publickKey[publicKey_length];   /// Публичный ключ передающего/принимающего узла
-		uint8_t HashBlock[hash_length];			/// Хэш блока
+		char	 command;                        /// Команда
+		char	 subcommand;						/// Подкоманда
+		char	 version;						/// Версия
+		char	 hash[hash_length];              /// Хэш передающего/принимающего узла
+		char	 publicKey[publicKey_length];   /// Публичный ключ передающего/принимающего узла
+		char	 HashBlock[hash_length];			/// Хэш блока
 		uint16_t header;						/// Номер заголовка
 		uint16_t countHeader;					/// Количество заголовков
-		uint8_t data[max_length];               /// Данные
-	}RecvBuffer, SendBuffer;
+		char	 data[max_length];               /// Данные
+	};
+#pragma pack (pop)
+	Packet RecvBuffer;
+	Packet SendBuffer;
 
 	struct Storage
 	{
@@ -151,8 +168,9 @@ private:
 	* \brief Метод иницилизации внутренних переменных.
 	* \return Размер служебной информации буфера приема/передачи информации
 	*/
-	constexpr std::size_t CalcSum() const;
+	unsigned int сalcSumHeader() const;
 	unsigned int SizePacketHeader;               /// Размер служебной информации буфера приема/передачи информации
+	unsigned int SizePacketHeader2;
 
 	boost::asio::io_service io_service_client_;  /// Сервис клиента
 	boost::asio::io_service io_service_server_;  /// Сервис сервера
@@ -168,7 +186,7 @@ private:
 	udp::endpoint OutputServiceServerEndpoint_;  /// Сетевой адрес сигнального сервера
 	udp::resolver OutputServiceResolver_;		 /// Решатель сервера
 
-	boost::circular_buffer<PacketNode> NodesRing_;   /// Кольцевой буфер хранения узлов
+	boost::circular_buffer<PacketNode> m_nodesRing;   /// Кольцевой буфер хранения узлов
 	boost::circular_buffer<Storage> BackData_;	     /// Кольцевой буфер хранения предыдущей информации
 
 	//boost::detail::spinlock SpinLock_;               /// Cпин-блокировка
@@ -192,27 +210,30 @@ private:
 	*/
 	void InputServiceHandleReceive(const boost::system::error_code & error, std::size_t bytes_transferred);
 
-	void InputServiceHandleSend(const boost::system::error_code & error, std::size_t bytes_transferred);
+	void outputHandleSend(boost::shared_ptr<std::string> message,
+		 const boost::system::error_code& error,
+		 std::size_t bytes_transferred);
 
-
-
-	void handle_send(boost::shared_ptr<std::string> /*message*/,
-		const boost::system::error_code& /*error*/,
-		std::size_t /*bytes_transferred*/);
+	void inputHandleSend(boost::shared_ptr<std::string> message,
+		 const boost::system::error_code& error,
+		 std::size_t bytes_transferred);
 
 	void SendBlocks(const char * buff, unsigned int size);
 
 	void GetBlocks2(std::size_t bytes_transferred);
 
-	/*!
-	* \brief Метод выдачи информации.
-	*/
-	void OutputServiceHandleSend(const boost::system::error_code& error, std::size_t bytes_transferred);
+
 
 	/*!
 	* \brief Метод выдачи информации.
 	*/
-	void OutputServiceSendCommand(const Packet & pack, unsigned int lenData);
+	void outFrmPack(CommandList cmd, SubCommandList sub_cmd, Version ver,
+					const char * data, unsigned int size_data);
+	void outSendPack(unsigned int size_pck);
+
+	void inFrmPack(CommandList cmd, SubCommandList sub_cmd, Version ver,
+				   const char * data, unsigned int size_data);	
+	void inSendPack(unsigned int size_pck);
 
 	/*!
 	* \brief Метод выдачи информации.
@@ -228,11 +249,6 @@ private:
 	* \brief Метод запроса хэш всех узлов.
 	*/
 	void SolverGetHashAll();
-
-	/*!
-	* \brief Метод запроса хэш данного узла.
-	*/
-	void SolverGiveHash(std::size_t bytes_transferred);
 
 	/*!
 	* \brief Метод отправки транзакции.
@@ -294,7 +310,7 @@ private:
 	*/
 	void RegistrationToServer();
 
-	void GenHashBlock(const char * buff, unsigned int size);
+	const std::string GenHashBlock(const char * buff, unsigned int size);
 
 	void SendSinhroPacket();
 
