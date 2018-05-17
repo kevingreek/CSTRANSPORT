@@ -57,7 +57,6 @@ add_executable(${TARGET} 	main.cpp
 							SessionIO.hpp
 							sha1.hpp
 							TextHelp.hpp
-							Export_Config.h
 							)
 target_compile_features(${TARGET} PUBLIC cxx_std_11)
 
