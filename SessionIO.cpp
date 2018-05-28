@@ -8,15 +8,15 @@
 #include "TextHelp.hpp"
 
 #include "sha1.hpp"
-//#include <Solver\Fake\Fake_Solver.hpp>
+#include <Solver\Fake\Fake_Solver.hpp>
 
 bool SessionIO::OneReg = true;
 
 char g_buff[200000] = { 0 };
 
 using namespace std::placeholders;
-SessionIO::SessionIO() : InputServiceResolver_(io_service_server_), OutputServiceResolver_(io_service_client_) 
-						/*factory(),solver(nullptr),*/ 
+SessionIO::SessionIO() : InputServiceResolver_(io_service_server_), OutputServiceResolver_(io_service_client_) ,
+						factory(),solver(nullptr)
 {
 	Initialization();
 }
@@ -28,7 +28,7 @@ void SessionIO::Initialization()
 	udp::resolver::query query_send(udp::v4(), host_Input.get<std::string>("ip"), host_Input.get<std::string>("port", "9001"));
 	InputServiceRecvEndpoint_ = *InputServiceResolver_.resolve(query_send);
 	InputServiceSocket_ = new udp::socket(io_service_server_, InputServiceRecvEndpoint_);
-	boost::asio::ip::udp::socket::receive_buffer_size recvBuff(65536);
+	boost::asio::ip::udp::socket::receive_buffer_size recvBuff(6553600);
 	InputServiceSocket_->set_option(boost::asio::ip::udp::socket::reuse_address(true));
 	InputServiceSocket_->set_option(recvBuff);
 
@@ -38,7 +38,7 @@ void SessionIO::Initialization()
 	udp::resolver::query query_recv(udp::v4(), host_Output.get<std::string>("ip"), host_Output.get<std::string>("port", "9000"));
 	OutputServiceRecvEndpoint_ = *OutputServiceResolver_.resolve(query_recv);
 	OutputServiceSocket_ = new udp::socket(io_service_client_, OutputServiceRecvEndpoint_);
-	boost::asio::ip::udp::socket::send_buffer_size sendBuff(65536);
+	boost::asio::ip::udp::socket::send_buffer_size sendBuff(6553600);
 	OutputServiceSocket_->set_option(boost::asio::ip::udp::socket::reuse_address(true));
 	InputServiceSocket_->set_option(sendBuff);
 
@@ -46,7 +46,7 @@ void SessionIO::Initialization()
 	udp::resolver::query query_serv(udp::v4(), server.get<std::string>("ip"), server.get<std::string>("port", "6000"));
 	OutputServiceServerEndpoint_ = *OutputServiceResolver_.resolve(query_serv);
 
-	m_nodesRing.resize(100);
+	m_nodesRing.resize(500);
 	BackData_.resize(100);
 
 	DefiningNode_ = LevelNodes::Normal;
@@ -55,36 +55,8 @@ void SessionIO::Initialization()
 	SizePacketHeader = ñalcSumHeader();
 	SizePacketHeader2 = ñalcSumHeader();
 
-	//std::cout << "Size SizePacketHeader2: " << SizePacketHeader2 << std::endl;
-	//std::cout << "Sizeof pack: " << sizeof(Packet) << std::endl;
-
-
-	//solver = factory.createSolver(Credits::solver_type::fake,MyPublicKey_, 
-	//						InputServiceRecvEndpoint_.address().to_string());
-	//
-	//if (solver != nullptr) {
-	//	solver->createBD();
-	//	solver->initApi();
-	//}
-
-
-	//SolverSendData_ = std::bind(&SessionIO::SolverSendData, this
-	//	, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5);
-	//
-	//solver->register_callback_send(SolverSendData_);
-	//
-	//solver->register_callback_node_type([this](int value) {
-	//	if (this->DefiningNode_ == LevelNodes::Ñonfidant) {
-	//		this->DefiningNode_ = LevelNodes::Write;
-
-	//	}
-	//});
-	//
-	//solver->register_callback_get_nodes_ip([this](void) {
-	//	return this->ÑonfidantNodes_;
-	//});
-
-	 
+	myIp = InputServiceRecvEndpoint_.address().to_string();
+ 
 }
 
 void SessionIO::DefiningNode(unsigned int init)
@@ -98,34 +70,26 @@ void SessionIO::SolverSendData(char * buffer, unsigned int buf_size, char * ip_b
 	{
 		case CommandList::SendBlock:
 		{
-			//std::cout << "Run SendBlock" << std::endl;
-			if (DefiningNode_ == LevelNodes::Write)
-			{
-				SendBlocks(buffer, buf_size);
-			}
+			SendBlocks(buffer, buf_size);
 			break;
 		}
 		case CommandList::GetHashAll:
 		{
-			//std::cout << "Run GetHashAll" << std::endl;
 			SolverGetHashAll();
 			break;
 		}
 		case CommandList::SendHash:
 		{
-			//std::cout << "Run SendHash" << std::endl;
 			SolverSendHash(buffer, buf_size, ip_buffer, ip_size);
 			break;
 		}
 		case CommandList::SendIpTable:
 		{
-			//std::cout << "Run SendIpTable" << std::endl;
-			GenTableRegistrationLevelNode(buffer, buf_size);
+			GenTableRegistrationLevelNode(buffer, (buf_size-1));
 			break;
 		}
 		case CommandList::SendTransaction:
 		{
-			//std::cout << "Run SendTransaction" << std::endl;
 			if (DefiningNode_ != LevelNodes::Main)
 			{
 				SolverSendTransaction(buffer, buf_size);
@@ -134,35 +98,45 @@ void SessionIO::SolverSendData(char * buffer, unsigned int buf_size, char * ip_b
 		}
 		case CommandList::SendTransactionList:
 		{
-			//std::cout << "Run SendTransactionList" << std::endl;
 			SolverSendTransactionList(buffer, buf_size);
 			break;
 		}
 		case CommandList::SendVector:
 		{
-			//std::cout << "Run SendVector" << std::endl;
 			SolverSendVector(buffer, buf_size);
 			break;
 		}
 		case CommandList::SendMatrix:
 		{
-			//std::cout << "Run SendMatrix" << std::endl;
 			SolverSendMatrix(buffer, buf_size);
 			break;
 		}
 		case CommandList::GiveHash2:
 		{
-			//std::cout << "Run GiveHash2" << std::endl;
+			break;
+		}
+		case CommandList::SuperCommand:
+		{
+			SuperCommandAAA(buffer, buf_size);
+			break;
+		}
+		case CommandList::SendSync:
+		{
+			SendSync1(buffer, buf_size, ip_buffer, ip_size);
+			break;
+		}
+		case CommandList::SendFirstBlock:
+		{
 			break;
 		}
 		default:
 		{
-		//	std::cout << "Incorrect command" << std::endl;
 			break;
 		}
 	}
-
 }
+
+
 
 SessionIO::~SessionIO()
 {
@@ -197,35 +171,6 @@ void SessionIO::InitMap()
 
 void SessionIO::InputServiceHandleReceive(const boost::system::error_code & error, std::size_t bytes_transferred)
 {
-	//std::cout << "InputServiceHandleReceive RecvBuffer.command: " << (unsigned int)RecvBuffer.command << std::endl;
-	//std::cout << "InputServiceHandleReceive RecvBuffer.subcommand: " << (unsigned int)RecvBuffer.subcommand << std::endl;
-	//std::cout << "InputServiceHandleReceive RecvBuffer.version: " << (unsigned int)RecvBuffer.version << std::endl;
-
-	//std::cout << "InputServiceHandleReceive RecvBuffer.hash: ";
-	//for (unsigned int i = 0; i < 40; i++)
-	//{
-	//	std::cout << RecvBuffer.hash[i];
-	//}
-	//std::cout << std::endl;
-
-	//std::cout << "InputServiceHandleReceive RecvBuffer.publicKey: ";
-	//for (unsigned int i = 0; i < 256; i++)
-	//{
-	//	std::cout << RecvBuffer.publicKey[i];
-	//}
-	//std::cout << std::endl;
-
-	//std::cout << "InputServiceHandleReceive RecvBuffer.HashBlock: ";
-	//for (unsigned int i = 0; i < 40; i++)
-	//{
-	//	std::cout << RecvBuffer.HashBlock[i];
-	//}
-	//std::cout << std::endl;
-
-	//std::cout << "InputServiceHandleReceive RecvBuffer.header: " << (unsigned int)RecvBuffer.header << std::endl;
-	//std::cout << "InputServiceHandleReceive RecvBuffer.countHeader: " << (unsigned int)RecvBuffer.countHeader << std::endl;
-
-
 	if (!error)
 	{
 		if (OneReg)
@@ -234,12 +179,13 @@ void SessionIO::InputServiceHandleReceive(const boost::system::error_code & erro
 			{
 				std::cout << "Connect... OK" << std::endl;			
 				OneReg = false;
-				InRegistrationNode();
 
-				if (RecvBuffer.version == 10)
+				if(RecvBuffer.subcommand == SubCommandList::RegistrationLevelNode)
 				{
-					//solver->setBD();
+					InRegistrationLevelNodeWithRings(bytes_transferred);
 				}
+				
+				InRegistrationNode();
 
 				StartReceive();
 				return;
@@ -265,33 +211,72 @@ void SessionIO::InputServiceHandleReceive(const boost::system::error_code & erro
 				}
 				else
 				{	
-					//std::cout << "Run Redirect OK" << std::endl;
 					switch (RecvBuffer.subcommand)
 					{
 						case SubCommandList::RegistrationLevelNode:
-						{
-						//	std::cout << "Run SelectionProcess" << std::endl;	
-							InRegistrationLevelNode(bytes_transferred);
+						{	
+							InRegistrationLevelNodeWithRings(bytes_transferred);
 							break;
 						}
 						case SubCommandList::GetBlock:
 						{
-							//std::cout << "Run GetBlock" << std::endl;
 							if (DefiningNode_ == LevelNodes::Normal)
 							{
-								GetBlocks2(bytes_transferred);
+
 							}
 							break;
 						}
 						case  SubCommandList::GetBlocks:
 						{
-							//std::cout << "Run GetBlock !!S!!" << std::endl;
 							GetBlocks2(bytes_transferred);
+							break;
+						}
+						case  SubCommandList::GetFirstBlock:
+						{
+							break;
+						}
+						case SubCommandList::SGetTransaction:
+						{
+							if (DefiningNode_ == LevelNodes::Main)
+							{
+
+							}
+							break;
+						}
+						case SubCommandList::SGetTransactionsList:
+						{
+							if (DefiningNode_ == LevelNodes::Ñonfidant)
+							{
+
+							}
+							break;
+						}
+						case SubCommandList::SGetVector:
+						{
+							if (DefiningNode_ == LevelNodes::Ñonfidant)
+							{
+
+							}
+							break;
+						}
+						case SubCommandList::SGetMatrix:
+						{
+							if (DefiningNode_ == LevelNodes::Ñonfidant)
+							{
+
+							}
+							break;
+						}
+						case SubCommandList::SGetHash:
+						{
+							if (DefiningNode_ == LevelNodes::Write)
+							{
+
+							}
 							break;
 						}
 						default:
 						{
-						//	std::cout << "Incorrect subcommand" << std::endl;
 							break;
 						}
 					}
@@ -300,55 +285,61 @@ void SessionIO::InputServiceHandleReceive(const boost::system::error_code & erro
 			}
 			case CommandList::GetHash:
 			{
-				//std::cout << "Run GetHash" << std::endl;
 				if (DefiningNode_ == LevelNodes::Write)
 				{
-					//std::random_shuffle(this->ÑonfidantNodes_.begin(), this->ÑonfidantNodes_.end());
-					//solver->getHash(RecvBuffer.data, bytes_transferred - SizePacketHeader, InputServiceSendEndpoint_.address().to_string().c_str(), InputServiceSendEndpoint_.address().to_string().length(), this->ÑonfidantNodes_);
+
 					
 				}
 				break;
 			}
 			case CommandList::GetMatrix:
 			{
-				//std::cout << "Run GetMatrix" << std::endl;
 				if (DefiningNode_ == LevelNodes::Ñonfidant)
 				{
-					
-				//	solver->getMatrix(RecvBuffer.data, bytes_transferred - SizePacketHeader, (void*)InputServiceSendEndpoint_.address().to_string().c_str(), InputServiceSendEndpoint_.address().to_string().length(),ÑonfidantNodes_);
+
 				}
 				break;
 			}
 			case CommandList::GetTransaction:
 			{
-				//std::cout << "Run GetTransaction" << std::endl;
 				if (DefiningNode_ == LevelNodes::Main)
 				{
-				//	solver->getTransaction(RecvBuffer.data, bytes_transferred - SizePacketHeader);
+
 				}
 				break;
 			}
 			case CommandList::GetTransactionList:
 			{
-				//std::cout << "Run GetTransactionList" << std::endl;
 				if (DefiningNode_ == LevelNodes::Ñonfidant)
 				{
-				//	solver->getTransactionList(RecvBuffer.data, bytes_transferred - SizePacketHeader);
+
 				}
 				break;
 			}
 			case CommandList::GetVector:
 			{
-				//std::cout << "Run GetVector" << std::endl;
 				if (DefiningNode_ == LevelNodes::Ñonfidant)
 				{
-				//	solver->getVector(RecvBuffer.data, bytes_transferred - SizePacketHeader, (void*)InputServiceSendEndpoint_.address().to_string().c_str(), InputServiceSendEndpoint_.address().to_string().length());
+		
 				}
 				break;
 			}
+			case CommandList::GetSync:
+				
+				if (DefiningNode_ == LevelNodes::Main) {
+				
+				}
+				break;
+			case CommandList::RealBlock:
+				
+				if (DefiningNode_ == LevelNodes::Write) {
+					
+				}
+				break;
+	
 			default:
 			{
-				std::cout << "Incorrect command" << std::endl;
+			
 				break;
 			}
 		}
@@ -361,16 +352,39 @@ void SessionIO::InputServiceHandleReceive(const boost::system::error_code & erro
 	StartReceive();
 }
 
+std::string SessionIO::getMessageHash(const std::string& publicKey, const char* data, unsigned int size_data) {
+	const std::string dataStr(data, size_data);
+
+	std::ostringstream ss;
+	ss << lastMessageId;
+	
+	return GenHashBlock((ss.str() + publicKey + " " + dataStr).c_str(), size_data + publicKey.size() + 1);
+}
+
 void SessionIO::outFrmPack(CommandList cmd, SubCommandList sub_cmd, Version ver,
 						   const char * data, unsigned int size_data)
 {
 	std::string hash_buff;
-	unsigned int count = size_data % max_length;
-	SendBuffer.countHeader = size_data / max_length;
-	if (count != NULL)
-		SendBuffer.countHeader++;
+	unsigned int count = 0;
+
+
+	if (size_data > max_length)
+	{
+		count = size_data % max_length;
+		SendBuffer.countHeader = size_data / max_length;
+		if (count != NULL)
+			SendBuffer.countHeader++;
+	}
+
+
 	if (data != NULL && size_data != NULL)
-	hash_buff = GenHashBlock(data, size_data);
+	{
+		hash_buff = getMessageHash(MyPublicKey_, data, size_data);
+	}
+
+	memcpy(SendBuffer.origin_ip, myIp.c_str(), myIp.size());
+	SendBuffer.origin_ip[myIp.size()] = '\0';
+
 	SendBuffer.command = cmd;
 	SendBuffer.subcommand = sub_cmd;
 	SendBuffer.version = ver;
@@ -384,14 +398,12 @@ void SessionIO::outFrmPack(CommandList cmd, SubCommandList sub_cmd, Version ver,
 			SendBuffer.header = i;
 			if (i == SendBuffer.countHeader - 1)
 			{
-				//hash_buff = GenHashBlock(data, count);
 				memcpy(SendBuffer.HashBlock, hash_buff.c_str(), hash_buff.length());
 				memcpy(SendBuffer.data, data, count);
 				outSendPack(count);
 			}
 			else
 			{
-				//hash_buff = GenHashBlock(data, size_data - i);
 				memcpy(SendBuffer.HashBlock, hash_buff.c_str(), hash_buff.length());
 				memcpy(SendBuffer.data, data, max_length);
 				outSendPack(max_length);
@@ -403,42 +415,15 @@ void SessionIO::outFrmPack(CommandList cmd, SubCommandList sub_cmd, Version ver,
 	{
 		SendBuffer.header = 0;
 		SendBuffer.countHeader = 0;
-		//hash_buff = GenHashBlock(data, count);
+		if(!data == NULL)
 		memcpy(SendBuffer.HashBlock, hash_buff.c_str(), hash_buff.length());
 
 		if (!data == NULL)
 			memcpy(SendBuffer.data, data, size_data);
 		outSendPack(size_data);
+
+
 	}
-
-	//std::cout << "outFrmPack SendBuffer.command: " << (unsigned int)SendBuffer.command << std::endl;
-	//std::cout << "outFrmPack SendBuffer.subcommand: " << (unsigned int)SendBuffer.subcommand << std::endl;
-	//std::cout << "outFrmPack SendBuffer.version: " << (unsigned int)SendBuffer.version << std::endl;
-
-	//std::cout << "outFrmPack SendBuffer.hash: ";
-	//for (unsigned int i = 0; i < 40; i++)
-	//{
-	//	std::cout << SendBuffer.hash[i];
-	//}
-	//std::cout << std::endl;
-
-	//std::cout << "outFrmPack SendBuffer.publicKey: ";
-	//for (unsigned int i = 0; i < 256; i++)
-	//{
-	//	std::cout << SendBuffer.publicKey[i];
-	//}
-	//std::cout << std::endl;
-
-	//std::cout << "outFrmPack SendBuffer.HashBlock: ";
-	//for (unsigned int i = 0; i < 40; i++)
-	//{
-	//	std::cout << SendBuffer.HashBlock[i];
-	//}
-	//std::cout << std::endl;
-
-	//std::cout << "outFrmPack SendBuffer.header: " <<	  (unsigned int)SendBuffer.header << std::endl;
-	//std::cout << "outFrmPack SendBuffer.countHeader: " << (unsigned int)SendBuffer.countHeader << std::endl;
-
 }
 
 void SessionIO::outSendPack(unsigned int size_pck)
@@ -446,7 +431,8 @@ void SessionIO::outSendPack(unsigned int size_pck)
 	boost::shared_ptr<std::string> message;
 	message = boost::shared_ptr<std::string>(new std::string);
 	message->append(reinterpret_cast<const char*>(&SendBuffer), SizePacketHeader2 + size_pck);
-	InputServiceSocket_->async_send_to(boost::asio::buffer(*message), OutputServiceSendEndpoint_,
+
+	OutputServiceSocket_->async_send_to(boost::asio::buffer(*message), OutputServiceSendEndpoint_,
 		boost::bind(&SessionIO::outputHandleSend, this, message,
 			boost::asio::placeholders::error,
 			boost::asio::placeholders::bytes_transferred));
@@ -467,16 +453,26 @@ void SessionIO::outputHandleSend(boost::shared_ptr<std::string> message,
 }
 
 void SessionIO::inFrmPack(CommandList cmd, SubCommandList sub_cmd, Version ver,
-						  const char * data, unsigned int size_data)
+						  const char * data, unsigned int size_data, std::string hash_buff)
 {
-	std::string hash_buff;
-	unsigned int count	   = size_data % max_length;
-	RecvBuffer.countHeader = size_data / max_length;
 
-	if (count != NULL)
-		SendBuffer.countHeader++;
-	if(data != NULL && size_data != NULL)
-	hash_buff = GenHashBlock(data, size_data);
+	unsigned int count = 0;
+
+	if (size_data > max_length)
+	{
+		count = size_data % max_length;
+		RecvBuffer.countHeader = size_data / max_length;   
+		if (count != NULL)
+			RecvBuffer.countHeader++;
+	}
+
+	if(hash_buff.empty() && data != NULL && size_data != NULL)
+	{ 
+		hash_buff = getMessageHash(MyPublicKey_, data, size_data);
+		memcpy(RecvBuffer.origin_ip, myIp.c_str(), myIp.size());
+		RecvBuffer.origin_ip[myIp.size()] = '\0';
+	}
+	
 	RecvBuffer.command		= cmd;
 	RecvBuffer.subcommand	= sub_cmd;
 	RecvBuffer.version		= ver;
@@ -484,23 +480,23 @@ void SessionIO::inFrmPack(CommandList cmd, SubCommandList sub_cmd, Version ver,
 	memcpy(RecvBuffer.publicKey, MyPublicKey_.c_str(), MyPublicKey_.length());
 
 
-	
 
 	if (size_data > max_length)
 	{
-		for (unsigned int i = 0; i < SendBuffer.countHeader; i++)
+		for (unsigned int i = 0; i < RecvBuffer.countHeader; i++)
 		{
-			SendBuffer.header = i;
-			if (i == SendBuffer.countHeader - 1)
+
+			RecvBuffer.header = i;
+			if (i == RecvBuffer.countHeader - 1)
 			{
-				//hash_buff = GenHashBlock(data, count);
+
 				memcpy(RecvBuffer.HashBlock, hash_buff.c_str(), hash_buff.length());
 				memcpy(RecvBuffer.data, data, count);
 				inSendPack(count);
 			}
 			else
 			{
-				//hash_buff = GenHashBlock(data, size_data - i);
+
 				memcpy(RecvBuffer.HashBlock, hash_buff.c_str(), hash_buff.length());
 				memcpy(RecvBuffer.data, data, max_length);
 				inSendPack(max_length);
@@ -510,42 +506,21 @@ void SessionIO::inFrmPack(CommandList cmd, SubCommandList sub_cmd, Version ver,
 	}
 	else
 	{
+
 		RecvBuffer.header = NULL;
 		RecvBuffer.countHeader = NULL;
-		//hash_buff = GenHashBlock(data, count);
-		memcpy(RecvBuffer.HashBlock, hash_buff.c_str(), hash_buff.length());
-		if (!data == NULL)
+
+		if(!(data == NULL))
+		{ 
+
+			memcpy(RecvBuffer.HashBlock, hash_buff.c_str(), hash_buff.length());
+		}
+		if (!(data == NULL))
 			memcpy(RecvBuffer.data, data, size_data);
+		
 		inSendPack(size_data);
 	}
 
-	//std::cout << "inFrmPack RecvBuffer.command: " << (unsigned int)RecvBuffer.command << std::endl;
-	//std::cout << "inFrmPack RecvBuffer.subcommand: " << (unsigned int)RecvBuffer.subcommand << std::endl;
-	//std::cout << "inFrmPack RecvBuffer.version: " << (unsigned int)RecvBuffer.version << std::endl;
-
-	//std::cout << "inFrmPack RecvBuffer.hash: ";
-	//for (unsigned int i = 0; i < 40; i++)
-	//{
-	//	std::cout << RecvBuffer.hash[i];
-	//}
-	//std::cout << std::endl;
-
-	//std::cout << "inFrmPack RecvBuffer.publicKey: ";
-	//for (unsigned int i = 0; i < 256; i++)
-	//{
-	//	std::cout << RecvBuffer.publicKey[i];
-	//}
-	//std::cout << std::endl;
-
-	//std::cout << "inFrmPack RecvBuffer.HashBlock: ";
-	//for (unsigned int i = 0; i < 40; i++)
-	//{
-	//	std::cout << RecvBuffer.HashBlock[i];
-	//}
-	//std::cout << std::endl;
-
-	//std::cout << "inFrmPack RecvBuffer.header: " << (unsigned int)RecvBuffer.header << std::endl;
-	//std::cout << "inFrmPack RecvBuffer.countHeader: " << (unsigned int)RecvBuffer.countHeader << std::endl;
 }
 
 void SessionIO::inSendPack(unsigned int size_pck)
@@ -553,6 +528,7 @@ void SessionIO::inSendPack(unsigned int size_pck)
 	boost::shared_ptr<std::string> message;
 	message = boost::shared_ptr<std::string>(new std::string);
 	message->append(reinterpret_cast<const char*>(&RecvBuffer), SizePacketHeader2 + size_pck);
+
 	InputServiceSocket_->async_send_to(boost::asio::buffer(*message), InputServiceSendEndpoint_,
 			boost::bind(&SessionIO::inputHandleSend, this, message,
 			boost::asio::placeholders::error,
@@ -581,14 +557,40 @@ void SessionIO::RegistrationToServer()
 	outFrmPack(CommandList::Registration, SubCommandList::Empty, Version::version_1, MyPublicKey_.c_str(), MyPublicKey_.size());
 }
 
+void SessionIO::SendSync1(const char * data, unsigned int size_data, const char * ip, unsigned int size_ip)
+{
+	std::string ip_buff;
+	ip_buff.append(ip, size_ip);
+	udp::resolver::query query_send(udp::v4(), ip_buff.c_str(), host_port_);
+	InputServiceSendEndpoint_ = *OutputServiceResolver_.resolve(query_send);
+	inFrmPack(CommandList::RealBlock, SubCommandList::Empty , Version::version_1, data, size_data);  
+}
+
 void SessionIO::SendBlocks(const char * buff, unsigned int size)
 {
-	inFrmPack(CommandList::Redirect, SubCommandList::GetBlocks, Version::version_1, buff, size);
+	inFrmPack(CommandList::Redirect, SubCommandList::GetBlocks, Version::version_1, buff, size);  
+}
+
+void SessionIO::SendBlocks2(const char * buff, unsigned int size)
+{
+	inFrmPack(CommandList::Redirect, SubCommandList::GetFirstBlock, Version::version_1, buff, size);  
 }
 
 void SessionIO::GetBlocks2(std::size_t bytes_transferred)
 { 
-	//solver->getBlock(RecvBuffer.data, bytes_transferred - SizePacketHeader);
+	
+}
+
+void SessionIO::SuperCommandAAA(char * data, unsigned int size_data)
+{
+	udp::resolver::query query_send(udp::v4(), GeneralNode_.c_str(), host_port_);
+	InputServiceSendEndpoint_ = *OutputServiceResolver_.resolve(query_send);
+	inFrmPack(CommandList::GetSync, SubCommandList::Empty, Version::version_1, data, size_data);  //!!
+}
+
+void SessionIO::SuperCommandSSS(char * data, unsigned int size_data)
+{
+
 }
 
 void SessionIO::SendSinhroPacket()
@@ -597,17 +599,167 @@ void SessionIO::SendSinhroPacket()
 	outFrmPack(CommandList::SinhroPacket, SubCommandList::Empty, Version::version_1, MyPublicKey_.c_str(), MyPublicKey_.length());
 }
 
+std::vector<SessionIO::PacketNode> SessionIO::parsePacketNodes(const std::string& nodesStr) {
+	std::vector<SessionIO::PacketNode> result;
+
+	std::vector<std::string> nodes;
+
+	{
+		const char* start = nodesStr.c_str();
+		const char* ptr = start;
+		const char* end = ptr + nodesStr.size();
+		while (ptr != end) {
+			if (*ptr == '|') {
+				nodes.emplace_back(start, ptr);
+				start = ptr + 1;
+			}
+			++ptr;
+		}
+	}
+
+	for (auto& n : nodes) {
+		std::vector<std::string> values;
+
+		const size_t size_array = n.size() + 1;
+		char* c_string = new char[size_array];
+		memcpy(c_string, n.c_str(), n.size());
+		c_string[n.size()] = '*';
+
+		const char* start = c_string;
+		const char* ptr = start;
+		const char* end = ptr + size_array;
+		while (ptr != end) {
+			if (*ptr == '*') {
+				values.emplace_back(start, ptr);
+				start = ptr + 1;
+			}
+			++ptr;
+		}
+
+		if (values.size() != 4) {
+			std::cerr << "!!! Expected structure, got shit: " << n << std::endl;
+			continue;
+		}
+
+		SessionIO::PacketNode pn;
+		pn.ip = values[0];
+		pn.port = values[1];
+		pn.hash = values[2];
+		pn.key = values[3];
+
+		result.push_back(pn);
+	}
+
+	return result;
+}
+
+void SessionIO::InRegistrationLevelNodeWithRings(std::size_t bytes_transferred)
+{
+	ÑonfidantNodes_.clear();
+	GeneralNode_.clear();
+
+	std::vector<PacketNode> packNodes;
+
+	const uint32_t TEXT_IP_MAX_LENGTH = 17;
+	std::string input(RecvBuffer.data, bytes_transferred - SizePacketHeader2);
+	auto firstIpEnd = input.begin() + TEXT_IP_MAX_LENGTH;
+
+	if (input.size() < TEXT_IP_MAX_LENGTH || std::find(input.begin(), firstIpEnd, ' ') != firstIpEnd) {
+		std::vector<std::string> ips;
+
+		if (!input.empty() && input.back() != ' ')
+			input.append(" ");
+
+		const char* start = input.c_str();
+		const char* ptr = start;
+		const char* end = ptr + input.size();
+
+		while (ptr != end) {
+			if (*ptr == ' ') {
+				SessionIO::PacketNode pn;
+				pn.ip = std::string(start, ptr);
+				pn.port = 9001;
+				packNodes.push_back(pn);
+				start = ptr + 1;
+			}
+			++ptr;
+		}
+	}
+	else {
+		std::string input(RecvBuffer.data, bytes_transferred - SizePacketHeader2);
+
+
+		packNodes = parsePacketNodes(input);
+
+		for (auto& pn : packNodes)
+			m_nodesRing.push_back(pn);
+	}
+
+	DefiningNode_ = LevelNodes::Normal;
+
+	if (packNodes.size() < 4) {
+		return;
+	}
+
+	GeneralNode_ = packNodes[0].ip;
+	for (size_t i = 1; i < 4; ++i) {
+		ÑonfidantNodes_.push_back(packNodes[i].ip);
+
+		if (packNodes[i].ip == InputServiceRecvEndpoint_.address().to_string())
+			DefiningNode_ = LevelNodes::Ñonfidant;
+	}
+
+	if (GeneralNode_ == InputServiceRecvEndpoint_.address().to_string())
+		DefiningNode_ = LevelNodes::Main;
+
+	static bool flag = true;
+	if (flag)
+	{
+		/* Test feature */
+		flag = false;
+		solver->setBD();
+	}
+
+	if (DefiningNode_ == LevelNodes::Normal)
+	{
+		
+	}
+
+	if (solver != nullptr)
+	{
+		
+
+	}
+
+
+	std::cout << "GeneralNode_: " << GeneralNode_ << " " << "GeneralNode_ size: " << GeneralNode_.size() << std::endl;
+
+	for (auto & e : ÑonfidantNodes_)
+	{
+		std::cout << "ÑonfidantNodes_: " << e << " " << "ÑonfidantNodes_ size: " << e.size() << std::endl;
+	}
+}
+
+const unsigned MAX_REDIRECT = 5;
+
+/* Returns true if further processing needed */
 bool SessionIO::RunRedirect(std::size_t bytes_transferred)
 {
+
+
 	Storage check;
 	memcpy(check.HashBlock, RecvBuffer.HashBlock, sizeof(check.HashBlock));
 	check.header = RecvBuffer.header;
 
-	for (auto & e : BackData_)
-		if (e == check)
-			return false;
+	auto myPack = std::find_if(BackData_.begin(), BackData_.end(), [&check](auto& lhs) { return lhs.first == check; });
+	const bool needProcessing = (myPack == BackData_.end());
 
-	BackData_.push_back(check);
+	if (!needProcessing) {
+		if (myPack->second == MAX_REDIRECT) return false;
+		++(myPack->second);
+	}
+	else
+		BackData_.push_back(std::make_pair(check, 1));
 
 	for (auto & e : m_nodesRing)
 	{
@@ -615,12 +767,16 @@ bool SessionIO::RunRedirect(std::size_t bytes_transferred)
 		{
 			udp::resolver::query query_send(udp::v4(), e.ip, e.port);
 			InputServiceSendEndpoint_ = *OutputServiceResolver_.resolve(query_send);
-			inFrmPack(CommandList::Redirect, static_cast<SubCommandList>(RecvBuffer.subcommand), Version::version_1, NULL, bytes_transferred - SizePacketHeader2);
+			inFrmPack(CommandList::Redirect, static_cast<SubCommandList>(RecvBuffer.subcommand), Version::version_1, NULL, bytes_transferred - SizePacketHeader2, std::string(RecvBuffer.HashBlock, sizeof(RecvBuffer.HashBlock)));
 		}
 	}
+
 	SendSinhroPacket();
-	return true;
+
+	return needProcessing;
 }
+
+const unsigned MAX_TIMES_NODE_IN_BUF = 30;
 
 void SessionIO::InRegistrationNode()
 {
@@ -638,51 +794,104 @@ void SessionIO::InRegistrationNode()
 		RegistrationNode.port = server_port_;
 	else
 		RegistrationNode.port = host_port_;
+
+	unsigned times = 0;
+
+	for (auto& e : m_nodesRing) {
+		if (e.ip == RegistrationNode.ip && e.port == RegistrationNode.port) {
+			++times;
+			if (times == MAX_TIMES_NODE_IN_BUF) {
+				return;
+			}
+		}
+	}
+
 	m_nodesRing.push_back(RegistrationNode);
 }
 
+
+
 void SessionIO::InRegistrationLevelNode(std::size_t bytes_transferred)
 {
-	ÑonfidantNodes_.clear();
-	GeneralNode_.clear();
-	std::string buffer1(" ");
-	std::string buffer2;
-	buffer2.append((char*)RecvBuffer.data, bytes_transferred - SizePacketHeader2);
-	
-	for(unsigned int i = 0 ; !buffer1.empty(); i++)
-	{
-		buffer1 = _text_help::get_field_from_st(buffer2, ' ', i);
-		if ( i >= 1 && !buffer1.empty() )
-		{
-			ÑonfidantNodes_.push_back(buffer1);
+		ÑonfidantNodes_.clear();
+		GeneralNode_.clear();
+		std::string buffer1(" ");
+		std::string buffer2;
+		buffer2.append((char*)RecvBuffer.data, bytes_transferred - SizePacketHeader2 );
 
-			if (buffer1 == InputServiceRecvEndpoint_.address().to_string())
-			{
-				DefiningNode_ = LevelNodes::Ñonfidant;
-			}
-		}
-		else if( !buffer1.empty() && i == 0)
+		static bool flag = true;
+		if (flag)
 		{
-			GeneralNode_ = buffer1;
-			if (GeneralNode_ == InputServiceRecvEndpoint_.address().to_string())
+			flag = false;
+			solver->setBD();
+		}
+
+		DefiningNode_ = LevelNodes::Normal;
+
+		for (unsigned int i = 0; !buffer1.empty(); i++)
+		{
+			buffer1 = _text_help::get_field_from_st(buffer2, ' ', i);
+			if (i >= 1 && !buffer1.empty())
 			{
-				DefiningNode_ = LevelNodes::Main;
+
+				ÑonfidantNodes_.push_back(buffer1);
+
+				if (buffer1 == InputServiceRecvEndpoint_.address().to_string())
+				{
+					DefiningNode_ = LevelNodes::Ñonfidant;
+				}
+			}
+			else if (!buffer1.empty() && i == 0)
+			{
+				GeneralNode_ = buffer1;
+
+				if (GeneralNode_ == InputServiceRecvEndpoint_.address().to_string())
+				{
+					DefiningNode_ = LevelNodes::Main;
+				}
 			}
 		}
+		if (DefiningNode_ == LevelNodes::Normal)
+		{
+			
+
+		}
+
+		if (solver != nullptr)
+		{
+
+		}
+
+
+	std::cout << "GeneralNode_: " << GeneralNode_ << " "  << "GeneralNode_ size: " << GeneralNode_ .size()<< std::endl;
+
+	for(auto & e : ÑonfidantNodes_)
+	{
+		std::cout << "ÑonfidantNodes_: " << e  << " " << "ÑonfidantNodes_ size: " << e.size() <<  std::endl;
 	}
 }
 
 void SessionIO::SolverSendHash(char * buffer, unsigned int buf_size, char * ip_buffer, unsigned int ip_size)
 {
-	std::string buff_ip;
-	udp::resolver::query query_send(udp::v4(), buff_ip, host_port_);
-	InputServiceSendEndpoint_ = *OutputServiceResolver_.resolve(query_send);
-	inFrmPack(CommandList::GetHash, SubCommandList::Empty, Version::version_1, buffer, buf_size);
+
+
+	++lastMessageId;
+
+	for (auto & e : m_nodesRing)
+	{
+		if (!e.ip.empty())
+		{
+			udp::resolver::query query_send(udp::v4(), e.ip, e.port);
+			InputServiceSendEndpoint_ = *OutputServiceResolver_.resolve(query_send);
+			inFrmPack(CommandList::Redirect, SubCommandList::SGetHash, Version::version_1, buffer, buf_size);  //!!
+		}
+	}
 	SendSinhroPacket();
 }
 
 void SessionIO::SolverGetHashAll()
 {
+	++lastMessageId;
 	static unsigned int size_ip_addr = InputServiceRecvEndpoint_.address().to_string().length();
 	for (auto & e : m_nodesRing)
 	{
@@ -691,21 +900,22 @@ void SessionIO::SolverGetHashAll()
 			udp::resolver::query query_send(udp::v4(), e.ip, e.port);
 			InputServiceSendEndpoint_ = *OutputServiceResolver_.resolve(query_send);
 			inFrmPack(CommandList::Redirect, SubCommandList::GiveHash, Version::version_1,
-					  InputServiceRecvEndpoint_.address().to_string().c_str(), size_ip_addr);
+					  InputServiceRecvEndpoint_.address().to_string().c_str(), size_ip_addr);  //!!
 		}
 	}
 	SendSinhroPacket();
 }
 
-void SessionIO::GenTableRegistrationLevelNode(char * data, unsigned size)
+void SessionIO::GenTableRegistrationLevelNode(char* data, unsigned size)
 {
+	++lastMessageId;
 	for (auto & e : m_nodesRing)
 	{
 		if (!e.ip.empty())
 		{
 			udp::resolver::query query_send(udp::v4(), e.ip, e.port);
 			InputServiceSendEndpoint_ = *OutputServiceResolver_.resolve(query_send);
-			inFrmPack(CommandList::Redirect, SubCommandList::RegistrationLevelNode, Version::version_1, data, size);
+			inFrmPack(CommandList::Redirect, SubCommandList::RegistrationLevelNode, Version::version_1, data, size);  //!!
 		}
 	}
 	SendSinhroPacket();
@@ -713,13 +923,14 @@ void SessionIO::GenTableRegistrationLevelNode(char * data, unsigned size)
 
 void SessionIO::SolverSendBlock(const char * data, unsigned size)
 {
+	++lastMessageId;
 	for (auto & e : m_nodesRing)
 	{
 		if (!e.ip.empty())
 		{
 			udp::resolver::query query_send(udp::v4(), e.ip, e.port);
 			InputServiceSendEndpoint_ = *OutputServiceResolver_.resolve(query_send);
-			inFrmPack(CommandList::Redirect, SubCommandList::GetBlock, Version::version_1, data, size);
+			inFrmPack(CommandList::Redirect, SubCommandList::GetBlock, Version::version_1, data, size); //!
 		}
 	}
 
@@ -728,21 +939,31 @@ void SessionIO::SolverSendBlock(const char * data, unsigned size)
 
 void SessionIO::SolverSendTransaction(const char * data, unsigned size)
 {
-	udp::resolver::query query_send(udp::v4(), GeneralNode_.c_str(), host_port_);
-	OutputServiceSendEndpoint_ = *OutputServiceResolver_.resolve(query_send);
-	outFrmPack(CommandList::GetTransaction, SubCommandList::Empty, Version::version_1, data, size);
+
+	++lastMessageId;
+	for (auto & e : m_nodesRing)
+	{
+		if (!e.ip.empty() && e.ip != InputServiceRecvEndpoint_.address().to_string())
+		{
+			udp::resolver::query query_sends(udp::v4(), e.ip, e.port);
+			OutputServiceSendEndpoint_ = *InputServiceResolver_.resolve(query_sends);
+			outFrmPack(CommandList::Redirect, SubCommandList::SGetTransaction, Version::version_1, data, size);
+		}
+	}
 	SendSinhroPacket();
 }
 
 void SessionIO::SolverSendTransactionList(const char * data, unsigned size)
 {
-	for (auto & e : ÑonfidantNodes_)
+
+	++lastMessageId;
+	for (auto & e : m_nodesRing)
 	{
-		if (!e.empty() && e != InputServiceRecvEndpoint_.address().to_string())
+		if (!e.ip.empty() && e.ip != InputServiceRecvEndpoint_.address().to_string())
 		{
-			udp::resolver::query query_send(udp::v4(), e.c_str(), host_port_);
+			udp::resolver::query query_send(udp::v4(), e.ip, e.port);
 			InputServiceSendEndpoint_ = *OutputServiceResolver_.resolve(query_send);
-			inFrmPack(CommandList::GetTransactionList, SubCommandList::Empty, Version::version_1, data, size);
+			inFrmPack(CommandList::Redirect, SubCommandList::SGetTransactionsList, Version::version_1, data, size);
 		}
 	}
 	SendSinhroPacket();
@@ -750,27 +971,32 @@ void SessionIO::SolverSendTransactionList(const char * data, unsigned size)
 
 void SessionIO::SolverSendVector(const char * data, unsigned size)
 {
-	for (auto & e : ÑonfidantNodes_)
+
+	++lastMessageId;
+	for (auto & e : m_nodesRing)
 	{
-		if (!e.empty() && e != InputServiceRecvEndpoint_.address().to_string())
+		if (!e.ip.empty() && e.ip != InputServiceRecvEndpoint_.address().to_string())
 		{
-			udp::resolver::query query_send(udp::v4(), e.c_str(), host_port_);
-			InputServiceSendEndpoint_ = *OutputServiceResolver_.resolve(query_send);
-			inFrmPack(CommandList::GetVector, SubCommandList::Empty, Version::version_1, data, size);
+			udp::resolver::query query_sends(udp::v4(), e.ip, e.port);
+			OutputServiceSendEndpoint_ = *InputServiceResolver_.resolve(query_sends);
+			outFrmPack(CommandList::Redirect, SubCommandList::SGetVector, Version::version_1, data, size);
 		}
 	}
+
 	SendSinhroPacket();
 }
 
 void SessionIO::SolverSendMatrix(const char * data, unsigned size)
 {
-	for (auto & e : ÑonfidantNodes_)
+
+	++lastMessageId;
+	for (auto & e : m_nodesRing)
 	{
-		if (!e.empty() && e != InputServiceRecvEndpoint_.address().to_string())
+		if (!e.ip.empty() && e.ip != InputServiceRecvEndpoint_.address().to_string())
 		{
-			udp::resolver::query query_send(udp::v4(), e.c_str(), host_port_);
-			InputServiceSendEndpoint_ = *OutputServiceResolver_.resolve(query_send);
-			inFrmPack(CommandList::GetMatrix, SubCommandList::Empty, Version::version_1, data, size);
+			udp::resolver::query query_sends(udp::v4(), e.ip, e.port);
+			OutputServiceSendEndpoint_ = *InputServiceResolver_.resolve(query_sends);
+			outFrmPack(CommandList::Redirect, SubCommandList::SGetMatrix, Version::version_1, data, size);
 		}
 	}
 	SendSinhroPacket();
@@ -778,7 +1004,7 @@ void SessionIO::SolverSendMatrix(const char * data, unsigned size)
 
 void SessionIO::GenerationHash()
 {
-	char buff[256];
+	char buff[45];
 
 	std::random_device rd;
 	std::mt19937 gen(rd());
@@ -789,13 +1015,18 @@ void SessionIO::GenerationHash()
 	hash.update(Hex);
 	MyHash_ = hash.final();
 
+	std::string tmp(24, '0');
+	MyPublicKey_ = tmp;
+	
 	std::ifstream fin("PublicKey.txt");
 	if (!fin.is_open())
 		std::cout << "File is not open!\n";
 	else
 	{
-		fin.getline(buff, 256);
-		MyPublicKey_ = buff;
+		fin.getline(buff, 45);
+		tmp = this->GenHashBlock(buff, 44);
+		MyPublicKey_ += tmp;
+	
 		fin.close();
 	}
 
@@ -807,6 +1038,7 @@ const std::string SessionIO::GenHashBlock(const char * buff, unsigned int size)
 	sha_1.update(std::string(buff, size));
 	return sha_1.final();
 }
+
 void SessionIO::Run()
 {
 	StartReceive();

@@ -26,14 +26,14 @@
 #include "sha1.hpp"
 
 
-//#include <Solver\SolverFactory.hpp>
+#include <Solver\SolverFactory.hpp>
 
 using boost::asio::ip::udp;
 
 
-//namespace Credits {
-//	class ISolver;
-//}
+namespace Credits {
+	class ISolver;
+}
 
 /**
 @class SessionIO
@@ -85,8 +85,8 @@ private:
 	std::string GeneralNode_;                 /// Главный узел
 
 	std::string calc_hash;
-	//Credits::SolverFactory factory;
-	//std::unique_ptr<Credits::ISolver> solver;
+	Credits::SolverFactory factory;
+	std::unique_ptr<Credits::ISolver> solver;
 
 
 	/// Перечисление уровней узла
@@ -116,7 +116,12 @@ private:
 		GetHashAll ,          /// Запрос хэш(а) со всех узлов
 		SendIpTable ,         /// Разослать список доверенных узлов и главного всем узлам
 		SinhroPacket ,
-		GiveHash2
+		GiveHash2,
+		SuperCommand,
+		GetSync,
+		SendSync,
+		RealBlock,
+		SendFirstBlock = 24
 	};
 
 	/// Перечисление подкоманд
@@ -125,7 +130,13 @@ private:
 		GiveHash ,              /// Запрос на хэш
 		GetBlock ,			  /// Запрос на блок данных
 		GetBlocks,
-		Empty
+		Empty,
+		GetFirstBlock,
+		SGetTransaction,
+		SGetTransactionsList,
+		SGetVector,
+		SGetMatrix,
+		SGetHash
 	};
 
 	enum Version
@@ -133,23 +144,26 @@ private:
 		version_1 = 1
 	};
 
-	enum { max_length = 62440, hash_length = 40, publicKey_length = 256 };
+	enum { max_length = 62440, hash_length = 40, publicKey_length = 64, ip_max_length = 16 };
 
 	/// Структура буфера приема/передачи информации
-#pragma pack (push, 1)
+
+#pragma pack(push, 1)
 	struct Packet
 	{
 		char	 command;                        /// Команда
-		char	 subcommand;						/// Подкоманда
-		char	 version;						/// Версия
+		char	 subcommand;					 /// Подкоманда
+		char	 version;						 /// Версия
+		char	 origin_ip[ip_max_length];       /// Адрес первого отправителя
 		char	 hash[hash_length];              /// Хэш передающего/принимающего узла
-		char	 publicKey[publicKey_length];   /// Публичный ключ передающего/принимающего узла
-		char	 HashBlock[hash_length];			/// Хэш блока
-		uint16_t header;						/// Номер заголовка
-		uint16_t countHeader;					/// Количество заголовков
+		char	 publicKey[publicKey_length];    /// Публичный ключ передающего/принимающего узла
+		char	 HashBlock[hash_length];		 /// Хэш блока
+		uint16_t header;						 /// Номер заголовка
+		uint16_t countHeader;					 /// Количество заголовков
 		char	 data[max_length];               /// Данные
 	};
-#pragma pack (pop)
+#pragma pack(pop)
+
 	Packet RecvBuffer;
 	Packet SendBuffer;
 
@@ -187,12 +201,15 @@ private:
 	udp::resolver OutputServiceResolver_;		 /// Решатель сервера
 
 	boost::circular_buffer<PacketNode> m_nodesRing;   /// Кольцевой буфер хранения узлов
-	boost::circular_buffer<Storage> BackData_;	     /// Кольцевой буфер хранения предыдущей информации
+	boost::circular_buffer<std::pair<Storage, unsigned>> BackData_;	     /// Кольцевой буфер хранения предыдущей информации
 
 	//boost::detail::spinlock SpinLock_;               /// Cпин-блокировка
 	boost::property_tree::ptree config;              /// Класс инициализации
 	//boost::asio::deadline_timer timer;				 /// Таймер
 
+	std::string myIp;
+
+	long long unsigned lastMessageId = 0;
 
 	std::string tmp_hash1;
 	std::string tmp_hash2;
@@ -204,6 +221,12 @@ private:
 	void Initialization();
 
 	void InitMap();
+
+	void SuperCommandAAA(char * data, unsigned int size_data);
+
+	void SuperCommandSSS(char * data, unsigned int size_data);
+
+	std::vector<SessionIO::PacketNode> parsePacketNodes(const std::string&);
 
 	/*!
 	* \brief Метод приема информации.
@@ -222,7 +245,7 @@ private:
 
 	void GetBlocks2(std::size_t bytes_transferred);
 
-
+	void SendSync1(const char * data, unsigned int size_data, const char * ip, unsigned int size_ip);
 
 	/*!
 	* \brief Метод выдачи информации.
@@ -232,7 +255,7 @@ private:
 	void outSendPack(unsigned int size_pck);
 
 	void inFrmPack(CommandList cmd, SubCommandList sub_cmd, Version ver,
-				   const char * data, unsigned int size_data);	
+				   const char * data, unsigned int size_data, std::string hash_block = "");
 	void inSendPack(unsigned int size_pck);
 
 	/*!
@@ -253,32 +276,32 @@ private:
 	/*!
 	* \brief Метод отправки транзакции.
 	*/
-	void SolverSendTransaction(const char * data, unsigned size);
+	void SolverSendTransaction(const char * data, unsigned int size);
 
 	/*!
 	* \brief Метод отправки транзакции.
 	*/
-	void SolverSendTransactionList(const char * data, unsigned size);
+	void SolverSendTransactionList(const char * data, unsigned int  size);
 
 	/*!
 	* \brief Метод отправки вектора.
 	*/
-	void SolverSendVector(const char * data, unsigned size);
+	void SolverSendVector(const char * data, unsigned int  size);
 
 	/*!
 	* \brief Метод отправки матрицы.
 	*/
-	void SolverSendMatrix(const char * data, unsigned size);
+	void SolverSendMatrix(const char * data, unsigned int  size);
 
 	/*!
 	* \brief Метод отправки блока данных.
 	*/
-	void SolverSendBlock(const char * data, unsigned size);
+	void SolverSendBlock(const char * data, unsigned int  size);
 
 	/*!
 	* \brief Метод генерации доверенных и главного узла.
 	*/
-	void GenTableRegistrationLevelNode( char * data, unsigned size);
+	void GenTableRegistrationLevelNode( char * data, unsigned int  size);
 
 	/*!
 	* \brief Метод генерации случайного хэш.
@@ -289,6 +312,8 @@ private:
 	* \brief Метод запуска всех процессов.
 	*/
 	void StartReceive();
+
+	void SendBlocks2(const char * buff, unsigned int size);
 
 	/*!
 	* \brief Метод пересылки информации узлам.
@@ -304,6 +329,7 @@ private:
 	* \brief Метод регистрации доверенных и главного узла.
 	*/
 	void InRegistrationLevelNode(std::size_t bytes_transferred);
+	void InRegistrationLevelNodeWithRings(std::size_t bytes_transferred);
 
 	/*!
 	* \brief Метод регистрации на сигнальном сервере.
@@ -311,6 +337,7 @@ private:
 	void RegistrationToServer();
 
 	const std::string GenHashBlock(const char * buff, unsigned int size);
+	std::string getMessageHash(const std::string& publicKey, const char* data, unsigned int size_data);
 
 	void SendSinhroPacket();
 
