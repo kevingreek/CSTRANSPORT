@@ -26,15 +26,6 @@
 #include "sha1.hpp"
 
 
-#include <Solver\SolverFactory.hpp>
-
-using boost::asio::ip::udp;
-
-
-namespace Credits {
-	class ISolver;
-}
-
 /**
 @class SessionIO
 Класс траспортного уровня асинхронного приема/передачи информации по протоколу UDP.
@@ -60,7 +51,7 @@ public:
 private:
 
 	unsigned int DefiningNode_;				/// Определение уровня узла ( клиента )
-	const uint16_t version_ = 1;			/// Версия узла
+	//const uint16_t version_ = 1;			/// Версия узла //!
 	const char * host_port_ = { "9001" };	/// Порт хоста по умолчанию
 	const char * server_port_ = { "6000" }; /// Порт сигнального сервера по умолчанию
 	static bool OneReg;						/// Флаг регистрации 
@@ -85,8 +76,7 @@ private:
 	std::string GeneralNode_;                 /// Главный узел
 
 	std::string calc_hash;
-	Credits::SolverFactory factory;
-	std::unique_ptr<Credits::ISolver> solver;
+
 
 
 	/// Перечисление уровней узла
@@ -121,7 +111,8 @@ private:
 		GetSync,
 		SendSync,
 		RealBlock,
-		SendFirstBlock = 24
+		SendFirstBlock = 24,
+		RegistrationConnectionRefused = 25
 	};
 
 	/// Перечисление подкоманд
@@ -136,13 +127,16 @@ private:
 		SGetTransactionsList,
 		SGetVector,
 		SGetMatrix,
-		SGetHash
+		SGetHash,
+		SGetIpTable
 	};
 
 	enum Version
 	{
 		version_1 = 1
 	};
+
+	const int CURRENT_VERSION = 42; // Версия узла
 
 	enum { max_length = 62440, hash_length = 40, publicKey_length = 64, ip_max_length = 16 };
 
@@ -208,7 +202,7 @@ private:
 	//boost::asio::deadline_timer timer;				 /// Таймер
 
 	std::string myIp;
-
+	long long unsigned roundNum = 0;
 	long long unsigned lastMessageId = 0;
 
 	std::string tmp_hash1;
@@ -227,6 +221,8 @@ private:
 	void SuperCommandSSS(char * data, unsigned int size_data);
 
 	std::vector<SessionIO::PacketNode> parsePacketNodes(const std::string&);
+
+	char * GetRoundNum(std::size_t bytes_transferred);
 
 	/*!
 	* \brief Метод приема информации.
@@ -251,7 +247,7 @@ private:
 	* \brief Метод выдачи информации.
 	*/
 	void outFrmPack(CommandList cmd, SubCommandList sub_cmd, Version ver,
-					const char * data, unsigned int size_data);
+					const char * data, unsigned int size_data, std::string hash_block = "");
 	void outSendPack(unsigned int size_pck);
 
 	void inFrmPack(CommandList cmd, SubCommandList sub_cmd, Version ver,
@@ -329,11 +325,17 @@ private:
 	* \brief Метод регистрации доверенных и главного узла.
 	*/
 	void InRegistrationLevelNode(std::size_t bytes_transferred);
-	void InRegistrationLevelNodeWithRings(std::size_t bytes_transferred);
+	void ParseIpTable(std::size_t bytes_transferred);
+
+	void parseIpList(std::string input);
+
+public:
+	void AfterSelection(const std::vector<PacketNode>& packNodes);
 
 	/*!
 	* \brief Метод регистрации на сигнальном сервере.
 	*/
+private:
 	void RegistrationToServer();
 
 	const std::string GenHashBlock(const char * buff, unsigned int size);

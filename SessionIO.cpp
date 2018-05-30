@@ -3,23 +3,31 @@
 #include <thread>
 #include <random>
 #include <fstream>
+#include <chrono>
+#include <thread>
 
 #include "SessionIO.hpp"
 #include "TextHelp.hpp"
 
 #include "sha1.hpp"
-#include <Solver\Fake\Fake_Solver.hpp>
 
 bool SessionIO::OneReg = true;
+
+const unsigned MAX_REDIRECT = 1;
+const unsigned MAX_TIMES_NODE_IN_BUF = 1;
 
 char g_buff[200000] = { 0 };
 
 using namespace std::placeholders;
-SessionIO::SessionIO() : InputServiceResolver_(io_service_server_), OutputServiceResolver_(io_service_client_) ,
-						factory(),solver(nullptr)
+SessionIO::SessionIO() : InputServiceResolver_(io_service_server_), OutputServiceResolver_(io_service_client_) 
+			
 {
 	Initialization();
 }
+
+
+//void f();
+
 
 void SessionIO::Initialization()
 {
@@ -28,7 +36,7 @@ void SessionIO::Initialization()
 	udp::resolver::query query_send(udp::v4(), host_Input.get<std::string>("ip"), host_Input.get<std::string>("port", "9001"));
 	InputServiceRecvEndpoint_ = *InputServiceResolver_.resolve(query_send);
 	InputServiceSocket_ = new udp::socket(io_service_server_, InputServiceRecvEndpoint_);
-	boost::asio::ip::udp::socket::receive_buffer_size recvBuff(6553600);
+	boost::asio::ip::udp::socket::receive_buffer_size recvBuff(65536);
 	InputServiceSocket_->set_option(boost::asio::ip::udp::socket::reuse_address(true));
 	InputServiceSocket_->set_option(recvBuff);
 
@@ -38,7 +46,7 @@ void SessionIO::Initialization()
 	udp::resolver::query query_recv(udp::v4(), host_Output.get<std::string>("ip"), host_Output.get<std::string>("port", "9000"));
 	OutputServiceRecvEndpoint_ = *OutputServiceResolver_.resolve(query_recv);
 	OutputServiceSocket_ = new udp::socket(io_service_client_, OutputServiceRecvEndpoint_);
-	boost::asio::ip::udp::socket::send_buffer_size sendBuff(6553600);
+	boost::asio::ip::udp::socket::send_buffer_size sendBuff(65536);
 	OutputServiceSocket_->set_option(boost::asio::ip::udp::socket::reuse_address(true));
 	InputServiceSocket_->set_option(sendBuff);
 
@@ -47,7 +55,7 @@ void SessionIO::Initialization()
 	OutputServiceServerEndpoint_ = *OutputServiceResolver_.resolve(query_serv);
 
 	m_nodesRing.resize(500);
-	BackData_.resize(100);
+	BackData_.resize(500);
 
 	DefiningNode_ = LevelNodes::Normal;
 	GenerationHash();
@@ -55,8 +63,8 @@ void SessionIO::Initialization()
 	SizePacketHeader = ñalcSumHeader();
 	SizePacketHeader2 = ñalcSumHeader();
 
+
 	myIp = InputServiceRecvEndpoint_.address().to_string();
- 
 }
 
 void SessionIO::DefiningNode(unsigned int init)
@@ -70,7 +78,7 @@ void SessionIO::SolverSendData(char * buffer, unsigned int buf_size, char * ip_b
 	{
 		case CommandList::SendBlock:
 		{
-			SendBlocks(buffer, buf_size);
+			SolverSendBlock(buffer, buf_size);
 			break;
 		}
 		case CommandList::GetHashAll:
@@ -85,7 +93,11 @@ void SessionIO::SolverSendData(char * buffer, unsigned int buf_size, char * ip_b
 		}
 		case CommandList::SendIpTable:
 		{
-			GenTableRegistrationLevelNode(buffer, (buf_size-1));
+			if (DefiningNode_ == LevelNodes::Write) {
+				++roundNum;
+				parseIpList(std::string(buffer, buf_size - 1));
+			}
+			GenTableRegistrationLevelNode(buffer, (buf_size - 1));
 			break;
 		}
 		case CommandList::SendTransaction:
@@ -182,7 +194,8 @@ void SessionIO::InputServiceHandleReceive(const boost::system::error_code & erro
 
 				if(RecvBuffer.subcommand == SubCommandList::RegistrationLevelNode)
 				{
-					InRegistrationLevelNodeWithRings(bytes_transferred);
+					std::cout << "Run SelectionProcess" << std::endl;
+					InRegistrationLevelNode(bytes_transferred);
 				}
 				
 				InRegistrationNode();
@@ -190,9 +203,16 @@ void SessionIO::InputServiceHandleReceive(const boost::system::error_code & erro
 				StartReceive();
 				return;
 			}
+			else if (RecvBuffer.command == CommandList::RegistrationConnectionRefused) {
+				std::cout << "Connect... REFUSED" << std::endl;
+				std::this_thread::sleep_for(std::chrono::milliseconds(10'000'000));
+				StartReceive();
+				return;
+			}
 			else
 			{
 				std::cout << "Connect... NO" << std::endl;
+				std::this_thread::sleep_for(std::chrono::milliseconds(10'000));
 				StartReceive();
 				return;
 			}
@@ -206,6 +226,7 @@ void SessionIO::InputServiceHandleReceive(const boost::system::error_code & erro
 			{
 				if (!RunRedirect(bytes_transferred))
 				{
+	
 					StartReceive();
 					return;
 				}
@@ -214,15 +235,20 @@ void SessionIO::InputServiceHandleReceive(const boost::system::error_code & erro
 					switch (RecvBuffer.subcommand)
 					{
 						case SubCommandList::RegistrationLevelNode:
-						{	
-							InRegistrationLevelNodeWithRings(bytes_transferred);
+						{
+							InRegistrationLevelNode(bytes_transferred);
+							break;
+						}
+						case SubCommandList::SGetIpTable:
+						{
+							ParseIpTable(bytes_transferred);
 							break;
 						}
 						case SubCommandList::GetBlock:
 						{
-							if (DefiningNode_ == LevelNodes::Normal)
+							if (DefiningNode_ != LevelNodes::Write)
 							{
-
+								GetBlocks2(bytes_transferred);
 							}
 							break;
 						}
@@ -273,10 +299,13 @@ void SessionIO::InputServiceHandleReceive(const boost::system::error_code & erro
 							{
 
 							}
+							else
+								std::cout << "No need for hash from " << std::string(RecvBuffer.origin_ip, strlen(RecvBuffer.origin_ip)) << std::endl;
 							break;
 						}
 						default:
 						{
+			
 							break;
 						}
 					}
@@ -288,7 +317,6 @@ void SessionIO::InputServiceHandleReceive(const boost::system::error_code & erro
 				if (DefiningNode_ == LevelNodes::Write)
 				{
 
-					
 				}
 				break;
 			}
@@ -296,7 +324,6 @@ void SessionIO::InputServiceHandleReceive(const boost::system::error_code & erro
 			{
 				if (DefiningNode_ == LevelNodes::Ñonfidant)
 				{
-
 				}
 				break;
 			}
@@ -320,18 +347,17 @@ void SessionIO::InputServiceHandleReceive(const boost::system::error_code & erro
 			{
 				if (DefiningNode_ == LevelNodes::Ñonfidant)
 				{
-		
 				}
 				break;
 			}
 			case CommandList::GetSync:
-				
+			
 				if (DefiningNode_ == LevelNodes::Main) {
-				
+			
 				}
 				break;
 			case CommandList::RealBlock:
-				
+	
 				if (DefiningNode_ == LevelNodes::Write) {
 					
 				}
@@ -339,7 +365,7 @@ void SessionIO::InputServiceHandleReceive(const boost::system::error_code & erro
 	
 			default:
 			{
-			
+				
 				break;
 			}
 		}
@@ -348,7 +374,7 @@ void SessionIO::InputServiceHandleReceive(const boost::system::error_code & erro
 	{
 		
 	}
-	
+
 	StartReceive();
 }
 
@@ -356,18 +382,17 @@ std::string SessionIO::getMessageHash(const std::string& publicKey, const char* 
 	const std::string dataStr(data, size_data);
 
 	std::ostringstream ss;
-	ss << lastMessageId;
+	ss << roundNum;//lastMessageId;
 	
-	return GenHashBlock((ss.str() + publicKey + " " + dataStr).c_str(), size_data + publicKey.size() + 1);
+	auto hash = GenHashBlock((ss.str() + publicKey + " " + dataStr).c_str(), size_data + publicKey.size() + 1);
+	return hash;
 }
 
 void SessionIO::outFrmPack(CommandList cmd, SubCommandList sub_cmd, Version ver,
-						   const char * data, unsigned int size_data)
+						   const char * data, unsigned int size_data, std::string hash_buff)
 {
-	std::string hash_buff;
 	unsigned int count = 0;
-
-
+ 
 	if (size_data > max_length)
 	{
 		count = size_data % max_length;
@@ -377,19 +402,20 @@ void SessionIO::outFrmPack(CommandList cmd, SubCommandList sub_cmd, Version ver,
 	}
 
 
-	if (data != NULL && size_data != NULL)
+	if (data != NULL && size_data != NULL && hash_buff.empty())
 	{
 		hash_buff = getMessageHash(MyPublicKey_, data, size_data);
+		memcpy(SendBuffer.origin_ip, myIp.c_str(), myIp.size());
+		SendBuffer.origin_ip[myIp.size()] = '\0';
 	}
 
-	memcpy(SendBuffer.origin_ip, myIp.c_str(), myIp.size());
-	SendBuffer.origin_ip[myIp.size()] = '\0';
 
 	SendBuffer.command = cmd;
 	SendBuffer.subcommand = sub_cmd;
 	SendBuffer.version = ver;
 	memcpy(SendBuffer.hash, MyHash_.c_str(), MyHash_.length());
 	memcpy(SendBuffer.publicKey, MyPublicKey_.c_str(), MyPublicKey_.length());
+
 
 	if (size_data > max_length)
 	{
@@ -398,12 +424,14 @@ void SessionIO::outFrmPack(CommandList cmd, SubCommandList sub_cmd, Version ver,
 			SendBuffer.header = i;
 			if (i == SendBuffer.countHeader - 1)
 			{
+
 				memcpy(SendBuffer.HashBlock, hash_buff.c_str(), hash_buff.length());
 				memcpy(SendBuffer.data, data, count);
 				outSendPack(count);
 			}
 			else
 			{
+
 				memcpy(SendBuffer.HashBlock, hash_buff.c_str(), hash_buff.length());
 				memcpy(SendBuffer.data, data, max_length);
 				outSendPack(max_length);
@@ -415,15 +443,18 @@ void SessionIO::outFrmPack(CommandList cmd, SubCommandList sub_cmd, Version ver,
 	{
 		SendBuffer.header = 0;
 		SendBuffer.countHeader = 0;
+	
 		if(!data == NULL)
-		memcpy(SendBuffer.HashBlock, hash_buff.c_str(), hash_buff.length());
+			memcpy(SendBuffer.HashBlock, hash_buff.c_str(), hash_buff.length());
 
 		if (!data == NULL)
 			memcpy(SendBuffer.data, data, size_data);
 		outSendPack(size_data);
 
 
+
 	}
+
 }
 
 void SessionIO::outSendPack(unsigned int size_pck)
@@ -431,6 +462,7 @@ void SessionIO::outSendPack(unsigned int size_pck)
 	boost::shared_ptr<std::string> message;
 	message = boost::shared_ptr<std::string>(new std::string);
 	message->append(reinterpret_cast<const char*>(&SendBuffer), SizePacketHeader2 + size_pck);
+
 
 	OutputServiceSocket_->async_send_to(boost::asio::buffer(*message), OutputServiceSendEndpoint_,
 		boost::bind(&SessionIO::outputHandleSend, this, message,
@@ -455,7 +487,7 @@ void SessionIO::outputHandleSend(boost::shared_ptr<std::string> message,
 void SessionIO::inFrmPack(CommandList cmd, SubCommandList sub_cmd, Version ver,
 						  const char * data, unsigned int size_data, std::string hash_buff)
 {
-
+	
 	unsigned int count = 0;
 
 	if (size_data > max_length)
@@ -479,24 +511,19 @@ void SessionIO::inFrmPack(CommandList cmd, SubCommandList sub_cmd, Version ver,
 	memcpy(RecvBuffer.hash, MyHash_.c_str(), MyHash_.length());
 	memcpy(RecvBuffer.publicKey, MyPublicKey_.c_str(), MyPublicKey_.length());
 
-
-
 	if (size_data > max_length)
 	{
 		for (unsigned int i = 0; i < RecvBuffer.countHeader; i++)
 		{
-
 			RecvBuffer.header = i;
 			if (i == RecvBuffer.countHeader - 1)
 			{
-
 				memcpy(RecvBuffer.HashBlock, hash_buff.c_str(), hash_buff.length());
 				memcpy(RecvBuffer.data, data, count);
 				inSendPack(count);
 			}
 			else
 			{
-
 				memcpy(RecvBuffer.HashBlock, hash_buff.c_str(), hash_buff.length());
 				memcpy(RecvBuffer.data, data, max_length);
 				inSendPack(max_length);
@@ -506,21 +533,19 @@ void SessionIO::inFrmPack(CommandList cmd, SubCommandList sub_cmd, Version ver,
 	}
 	else
 	{
-
 		RecvBuffer.header = NULL;
 		RecvBuffer.countHeader = NULL;
-
 		if(!(data == NULL))
 		{ 
-
 			memcpy(RecvBuffer.HashBlock, hash_buff.c_str(), hash_buff.length());
 		}
 		if (!(data == NULL))
 			memcpy(RecvBuffer.data, data, size_data);
-		
+
+
+
 		inSendPack(size_data);
 	}
-
 }
 
 void SessionIO::inSendPack(unsigned int size_pck)
@@ -528,6 +553,7 @@ void SessionIO::inSendPack(unsigned int size_pck)
 	boost::shared_ptr<std::string> message;
 	message = boost::shared_ptr<std::string>(new std::string);
 	message->append(reinterpret_cast<const char*>(&RecvBuffer), SizePacketHeader2 + size_pck);
+
 
 	InputServiceSocket_->async_send_to(boost::asio::buffer(*message), InputServiceSendEndpoint_,
 			boost::bind(&SessionIO::inputHandleSend, this, message,
@@ -554,7 +580,8 @@ void SessionIO::inputHandleSend(boost::shared_ptr<std::string> message,
 void SessionIO::RegistrationToServer()
 {
 	OutputServiceSendEndpoint_ = OutputServiceServerEndpoint_;
-	outFrmPack(CommandList::Registration, SubCommandList::Empty, Version::version_1, MyPublicKey_.c_str(), MyPublicKey_.size());
+	std::string version = std::to_string(CURRENT_VERSION);
+	outFrmPack(CommandList::Registration, SubCommandList::Empty, Version::version_1, version.c_str(), version.size()); //!
 }
 
 void SessionIO::SendSync1(const char * data, unsigned int size_data, const char * ip, unsigned int size_ip)
@@ -562,7 +589,7 @@ void SessionIO::SendSync1(const char * data, unsigned int size_data, const char 
 	std::string ip_buff;
 	ip_buff.append(ip, size_ip);
 	udp::resolver::query query_send(udp::v4(), ip_buff.c_str(), host_port_);
-	InputServiceSendEndpoint_ = *OutputServiceResolver_.resolve(query_send);
+	OutputServiceSendEndpoint_ = *OutputServiceResolver_.resolve(query_send);
 	inFrmPack(CommandList::RealBlock, SubCommandList::Empty , Version::version_1, data, size_data);  
 }
 
@@ -653,51 +680,76 @@ std::vector<SessionIO::PacketNode> SessionIO::parsePacketNodes(const std::string
 	return result;
 }
 
-void SessionIO::InRegistrationLevelNodeWithRings(std::size_t bytes_transferred)
-{
-	ÑonfidantNodes_.clear();
-	GeneralNode_.clear();
 
+char* SessionIO::GetRoundNum(std::size_t bytes_transferred)
+{
+	char* ptr = RecvBuffer.data;
+	char* end = ptr + (bytes_transferred - SizePacketHeader2 + 1);
+
+	while (ptr != end) {
+		if (*ptr == ' ') {
+			*ptr = '\0';
+			auto recdRoundNum = atoi(RecvBuffer.data);
+			if (recdRoundNum > roundNum) {
+				roundNum = recdRoundNum;
+				return ptr + 1;
+			}
+			else
+				std::cout << "Cutting off since " << roundNum << " < " << recdRoundNum << std::endl;
+			
+			return nullptr;
+		}
+		++ptr;
+	}
+
+	return nullptr;
+}
+
+
+void SessionIO::ParseIpTable(std::size_t bytes_transferred)
+{
+	char* ipTableStart = GetRoundNum(bytes_transferred);
+	if (!ipTableStart) return;
+
+	std::string input(ipTableStart, bytes_transferred - SizePacketHeader2);
+	parseIpList(input);
+}
+
+void SessionIO::parseIpList(std::string input) {
 	std::vector<PacketNode> packNodes;
 
-	const uint32_t TEXT_IP_MAX_LENGTH = 17;
-	std::string input(RecvBuffer.data, bytes_transferred - SizePacketHeader2);
-	auto firstIpEnd = input.begin() + TEXT_IP_MAX_LENGTH;
+	if (!input.empty() && input.back() != ' ')
+		input.append(" ");
 
-	if (input.size() < TEXT_IP_MAX_LENGTH || std::find(input.begin(), firstIpEnd, ' ') != firstIpEnd) {
-		std::vector<std::string> ips;
+	const char* start = input.c_str();
+	const char* ptr = start;
+	const char* end = ptr + input.size();
 
-		if (!input.empty() && input.back() != ' ')
-			input.append(" ");
-
-		const char* start = input.c_str();
-		const char* ptr = start;
-		const char* end = ptr + input.size();
-
-		while (ptr != end) {
-			if (*ptr == ' ') {
-				SessionIO::PacketNode pn;
-				pn.ip = std::string(start, ptr);
-				pn.port = 9001;
-				packNodes.push_back(pn);
-				start = ptr + 1;
-			}
-			++ptr;
+	while (ptr != end) {
+		if (*ptr == ' ' || *ptr == '\0') {
+			SessionIO::PacketNode pn;
+			pn.ip = std::string(start, ptr);
+			pn.port = 9001;
+			packNodes.push_back(pn);
+			start = ptr + 1;
+			std::cout << "Got ip ::" << pn.ip << "::" << std::endl;
 		}
-	}
-	else {
-		std::string input(RecvBuffer.data, bytes_transferred - SizePacketHeader2);
-
-
-		packNodes = parsePacketNodes(input);
-
-		for (auto& pn : packNodes)
-			m_nodesRing.push_back(pn);
+		
+		if (*ptr == '\0') break;
+		++ptr;
 	}
 
+	AfterSelection(packNodes);
+}
+
+void SessionIO::AfterSelection(const std::vector<PacketNode>& packNodes) {
+
+	ÑonfidantNodes_.clear();
+	GeneralNode_.clear();
 	DefiningNode_ = LevelNodes::Normal;
 
 	if (packNodes.size() < 4) {
+		
 		return;
 	}
 
@@ -705,11 +757,11 @@ void SessionIO::InRegistrationLevelNodeWithRings(std::size_t bytes_transferred)
 	for (size_t i = 1; i < 4; ++i) {
 		ÑonfidantNodes_.push_back(packNodes[i].ip);
 
-		if (packNodes[i].ip == InputServiceRecvEndpoint_.address().to_string())
+		if (packNodes[i].ip == /*InputServiceRecvEndpoint_.address().to_string()*/myIp)
 			DefiningNode_ = LevelNodes::Ñonfidant;
 	}
 
-	if (GeneralNode_ == InputServiceRecvEndpoint_.address().to_string())
+	if (GeneralNode_ == myIp/*InputServiceRecvEndpoint_.address().to_string()*/)
 		DefiningNode_ = LevelNodes::Main;
 
 	static bool flag = true;
@@ -717,57 +769,52 @@ void SessionIO::InRegistrationLevelNodeWithRings(std::size_t bytes_transferred)
 	{
 		/* Test feature */
 		flag = false;
-		solver->setBD();
-	}
 
-	if (DefiningNode_ == LevelNodes::Normal)
-	{
-		
-	}
-
-	if (solver != nullptr)
-	{
-		
-
-	}
-
-
-	std::cout << "GeneralNode_: " << GeneralNode_ << " " << "GeneralNode_ size: " << GeneralNode_.size() << std::endl;
-
-	for (auto & e : ÑonfidantNodes_)
-	{
-		std::cout << "ÑonfidantNodes_: " << e << " " << "ÑonfidantNodes_ size: " << e.size() << std::endl;
 	}
 }
 
-const unsigned MAX_REDIRECT = 5;
+void SessionIO::InRegistrationLevelNode(std::size_t bytes_transferred)
+{
+	std::vector<PacketNode> packNodes;
+
+	char* ipTableStart = GetRoundNum(bytes_transferred);
+	if (!ipTableStart) return;
+
+	std::string input(ipTableStart, bytes_transferred - SizePacketHeader2);
+
+
+	packNodes = parsePacketNodes(input);
+
+	for (auto& pn : packNodes)
+			m_nodesRing.push_back(pn);
+
+	AfterSelection(packNodes);
+}
 
 /* Returns true if further processing needed */
 bool SessionIO::RunRedirect(std::size_t bytes_transferred)
 {
-
-
 	Storage check;
-	memcpy(check.HashBlock, RecvBuffer.HashBlock, sizeof(check.HashBlock));
-	check.header = RecvBuffer.header;
-
 	auto myPack = std::find_if(BackData_.begin(), BackData_.end(), [&check](auto& lhs) { return lhs.first == check; });
 	const bool needProcessing = (myPack == BackData_.end());
 
 	if (!needProcessing) {
-		if (myPack->second == MAX_REDIRECT) return false;
+		if (myPack->second == MAX_REDIRECT) {
+			return false;
+		}
 		++(myPack->second);
 	}
 	else
 		BackData_.push_back(std::make_pair(check, 1));
 
+	memcpy(&SendBuffer, &RecvBuffer, bytes_transferred);
 	for (auto & e : m_nodesRing)
 	{
-		if (!e.ip.empty() && e.ip != InputServiceRecvEndpoint_.address().to_string())
+		if (!e.ip.empty() 
 		{
 			udp::resolver::query query_send(udp::v4(), e.ip, e.port);
-			InputServiceSendEndpoint_ = *OutputServiceResolver_.resolve(query_send);
-			inFrmPack(CommandList::Redirect, static_cast<SubCommandList>(RecvBuffer.subcommand), Version::version_1, NULL, bytes_transferred - SizePacketHeader2, std::string(RecvBuffer.HashBlock, sizeof(RecvBuffer.HashBlock)));
+			OutputServiceSendEndpoint_ = *OutputServiceResolver_.resolve(query_send);
+			outFrmPack(CommandList::Redirect, static_cast<SubCommandList>(SendBuffer.subcommand), Version::version_1, NULL, bytes_transferred - SizePacketHeader2, std::string(SendBuffer.HashBlock, sizeof(SendBuffer.HashBlock)));
 		}
 	}
 
@@ -776,8 +823,6 @@ bool SessionIO::RunRedirect(std::size_t bytes_transferred)
 	return needProcessing;
 }
 
-const unsigned MAX_TIMES_NODE_IN_BUF = 30;
-
 void SessionIO::InRegistrationNode()
 {
 	if (RecvBuffer.command == CommandList::Registration)
@@ -785,10 +830,13 @@ void SessionIO::InRegistrationNode()
 		ServerHash_.append((char*)RecvBuffer.hash, hash_length);
 		ServerKey_.append((char*)RecvBuffer.publicKey, publicKey_length);
 	}
+
 	PacketNode RegistrationNode;
 	RegistrationNode.hash.append((char*)RecvBuffer.hash, hash_length);
 	RegistrationNode.key.append((char*)RecvBuffer.publicKey, publicKey_length);
 	RegistrationNode.ip = InputServiceSendEndpoint_.address().to_string();
+
+	if (myIp == RegistrationNode.ip) return;
 
 	if (ServerHash_ == RegistrationNode.hash)
 		RegistrationNode.port = server_port_;
@@ -809,72 +857,8 @@ void SessionIO::InRegistrationNode()
 	m_nodesRing.push_back(RegistrationNode);
 }
 
-
-
-void SessionIO::InRegistrationLevelNode(std::size_t bytes_transferred)
-{
-		ÑonfidantNodes_.clear();
-		GeneralNode_.clear();
-		std::string buffer1(" ");
-		std::string buffer2;
-		buffer2.append((char*)RecvBuffer.data, bytes_transferred - SizePacketHeader2 );
-
-		static bool flag = true;
-		if (flag)
-		{
-			flag = false;
-			solver->setBD();
-		}
-
-		DefiningNode_ = LevelNodes::Normal;
-
-		for (unsigned int i = 0; !buffer1.empty(); i++)
-		{
-			buffer1 = _text_help::get_field_from_st(buffer2, ' ', i);
-			if (i >= 1 && !buffer1.empty())
-			{
-
-				ÑonfidantNodes_.push_back(buffer1);
-
-				if (buffer1 == InputServiceRecvEndpoint_.address().to_string())
-				{
-					DefiningNode_ = LevelNodes::Ñonfidant;
-				}
-			}
-			else if (!buffer1.empty() && i == 0)
-			{
-				GeneralNode_ = buffer1;
-
-				if (GeneralNode_ == InputServiceRecvEndpoint_.address().to_string())
-				{
-					DefiningNode_ = LevelNodes::Main;
-				}
-			}
-		}
-		if (DefiningNode_ == LevelNodes::Normal)
-		{
-			
-
-		}
-
-		if (solver != nullptr)
-		{
-
-		}
-
-
-	std::cout << "GeneralNode_: " << GeneralNode_ << " "  << "GeneralNode_ size: " << GeneralNode_ .size()<< std::endl;
-
-	for(auto & e : ÑonfidantNodes_)
-	{
-		std::cout << "ÑonfidantNodes_: " << e  << " " << "ÑonfidantNodes_ size: " << e.size() <<  std::endl;
-	}
-}
-
 void SessionIO::SolverSendHash(char * buffer, unsigned int buf_size, char * ip_buffer, unsigned int ip_size)
 {
-
-
 	++lastMessageId;
 
 	for (auto & e : m_nodesRing)
@@ -882,8 +866,8 @@ void SessionIO::SolverSendHash(char * buffer, unsigned int buf_size, char * ip_b
 		if (!e.ip.empty())
 		{
 			udp::resolver::query query_send(udp::v4(), e.ip, e.port);
-			InputServiceSendEndpoint_ = *OutputServiceResolver_.resolve(query_send);
-			inFrmPack(CommandList::Redirect, SubCommandList::SGetHash, Version::version_1, buffer, buf_size);  //!!
+			OutputServiceSendEndpoint_ = *OutputServiceResolver_.resolve(query_send);
+			outFrmPack(CommandList::Redirect, SubCommandList::SGetHash, Version::version_1, buffer, buf_size);  //!!
 		}
 	}
 	SendSinhroPacket();
@@ -898,8 +882,8 @@ void SessionIO::SolverGetHashAll()
 		if (!e.ip.empty())
 		{
 			udp::resolver::query query_send(udp::v4(), e.ip, e.port);
-			InputServiceSendEndpoint_ = *OutputServiceResolver_.resolve(query_send);
-			inFrmPack(CommandList::Redirect, SubCommandList::GiveHash, Version::version_1,
+			OutputServiceSendEndpoint_ = *OutputServiceResolver_.resolve(query_send);
+			outFrmPack(CommandList::Redirect, SubCommandList::GiveHash, Version::version_1,
 					  InputServiceRecvEndpoint_.address().to_string().c_str(), size_ip_addr);  //!!
 		}
 	}
@@ -909,13 +893,17 @@ void SessionIO::SolverGetHashAll()
 void SessionIO::GenTableRegistrationLevelNode(char* data, unsigned size)
 {
 	++lastMessageId;
+
+	std::string buf = std::to_string(roundNum);
+	buf.append(" " + std::string(data, size));
+
 	for (auto & e : m_nodesRing)
 	{
 		if (!e.ip.empty())
 		{
 			udp::resolver::query query_send(udp::v4(), e.ip, e.port);
-			InputServiceSendEndpoint_ = *OutputServiceResolver_.resolve(query_send);
-			inFrmPack(CommandList::Redirect, SubCommandList::RegistrationLevelNode, Version::version_1, data, size);  //!!
+			OutputServiceSendEndpoint_ = *OutputServiceResolver_.resolve(query_send);
+			outFrmPack(CommandList::Redirect, SubCommandList::SGetIpTable, Version::version_1, buf.c_str(), buf.size() + 1);  //!!
 		}
 	}
 	SendSinhroPacket();
@@ -929,8 +917,8 @@ void SessionIO::SolverSendBlock(const char * data, unsigned size)
 		if (!e.ip.empty())
 		{
 			udp::resolver::query query_send(udp::v4(), e.ip, e.port);
-			InputServiceSendEndpoint_ = *OutputServiceResolver_.resolve(query_send);
-			inFrmPack(CommandList::Redirect, SubCommandList::GetBlock, Version::version_1, data, size); //!
+			OutputServiceSendEndpoint_ = *OutputServiceResolver_.resolve(query_send);
+			outFrmPack(CommandList::Redirect, SubCommandList::GetBlock, Version::version_1, data, size); //!
 		}
 	}
 
@@ -939,7 +927,6 @@ void SessionIO::SolverSendBlock(const char * data, unsigned size)
 
 void SessionIO::SolverSendTransaction(const char * data, unsigned size)
 {
-
 	++lastMessageId;
 	for (auto & e : m_nodesRing)
 	{
@@ -955,15 +942,14 @@ void SessionIO::SolverSendTransaction(const char * data, unsigned size)
 
 void SessionIO::SolverSendTransactionList(const char * data, unsigned size)
 {
-
 	++lastMessageId;
 	for (auto & e : m_nodesRing)
 	{
 		if (!e.ip.empty() && e.ip != InputServiceRecvEndpoint_.address().to_string())
 		{
 			udp::resolver::query query_send(udp::v4(), e.ip, e.port);
-			InputServiceSendEndpoint_ = *OutputServiceResolver_.resolve(query_send);
-			inFrmPack(CommandList::Redirect, SubCommandList::SGetTransactionsList, Version::version_1, data, size);
+			OutputServiceSendEndpoint_ = *OutputServiceResolver_.resolve(query_send);
+			outFrmPack(CommandList::Redirect, SubCommandList::SGetTransactionsList, Version::version_1, data, size);
 		}
 	}
 	SendSinhroPacket();
@@ -971,7 +957,6 @@ void SessionIO::SolverSendTransactionList(const char * data, unsigned size)
 
 void SessionIO::SolverSendVector(const char * data, unsigned size)
 {
-
 	++lastMessageId;
 	for (auto & e : m_nodesRing)
 	{
@@ -988,7 +973,6 @@ void SessionIO::SolverSendVector(const char * data, unsigned size)
 
 void SessionIO::SolverSendMatrix(const char * data, unsigned size)
 {
-
 	++lastMessageId;
 	for (auto & e : m_nodesRing)
 	{
@@ -1026,7 +1010,6 @@ void SessionIO::GenerationHash()
 		fin.getline(buff, 45);
 		tmp = this->GenHashBlock(buff, 44);
 		MyPublicKey_ += tmp;
-	
 		fin.close();
 	}
 
